@@ -1,0 +1,44 @@
+@HostAddress = http://localhost:5005
+
+### Register
+POST {{HostAddress}}/api/v1/identity/register
+Content-Type: application/json
+
+{
+  "email": "customer@shopsphere.local",
+  "password": "SecurePassword123!",
+  "firstName": "John",
+  "lastName": "Doe"
+}
+
+### Login
+# @name login
+POST {{HostAddress}}/api/v1/identity/login
+Content-Type: application/json
+
+{
+  "email": "customer@shopsphere.local",
+  "password": "SecurePassword123!"
+}
+
+### Me
+@token = {{login.response.body.accessToken}}
+GET {{HostAddress}}/api/v1/identity/me
+Authorization: Bearer {{token}}
+
+### Refresh
+@refreshToken = {{login.response.body.refreshToken}}
+POST {{HostAddress}}/api/v1/identity/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "{{refreshToken}}"
+}
+
+### Revoke
+POST {{HostAddress}}/api/v1/identity/revoke
+Content-Type: application/json
+
+{
+  "refreshToken": "{{refreshToken}}"
+}
