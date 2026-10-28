@@ -1,0 +1,163 @@
+name: shopsphere-infrastructure
+
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: shopsphere-sqlserver
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "${MSSQL_SA_PASSWORD:-ShopSphere_Dev_2026!}"
+      MSSQL_PID: "Developer"
+    ports:
+      - "${SQLSERVER_PORT:-11433}:1433"
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$${MSSQL_SA_PASSWORD}\" -C -Q 'SELECT 1' || /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P \"$${MSSQL_SA_PASSWORD}\" -Q 'SELECT 1'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - shopsphere-network
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: shopsphere-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER:-postgres}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-ShopSphere_Postgres_2026!}"
+      POSTGRES_DB: "${POSTGRES_DB:-shopsphere_inventory}"
+    ports:
+      - "${POSTGRES_PORT:-15432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - shopsphere-network
+
+  mongodb:
+    image: mongo:7.0
+    container_name: shopsphere-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: "${MONGO_INITDB_ROOT_USERNAME:-mongoadmin}"
+      MONGO_INITDB_ROOT_PASSWORD: "${MONGO_INITDB_ROOT_PASSWORD:-ShopSphere_Mongo_2026!}"
+    ports:
+      - "${MONGO_PORT:-27018}:27017"
+    volumes:
+      - mongodb_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - shopsphere-network
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: shopsphere-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "${REDIS_PORT:-16379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - shopsphere-network
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: shopsphere-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: "${RABBITMQ_DEFAULT_USER:-shopsphere}"
+      RABBITMQ_DEFAULT_PASS: "${RABBITMQ_DEFAULT_PASS:-ShopSphere_RabbitMQ_2026!}"
+    ports:
+      - "${RABBITMQ_PORT:-15672}:5672"
+      - "${RABBITMQ_MGMT_PORT:-25672}:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - shopsphere-network
+
+  seq:
+    image: datalust/seq:latest
+    container_name: shopsphere-seq
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      SEQ_FIRSTRUN_ADMINPASSWORDHASH: "" # Or omit if not setting admin pass upfront
+      SEQ_FIRSTRUN_NOAUTHENTICATION: "true"
+    ports:
+      - "${SEQ_PORT:-15341}:80"
+      - "${SEQ_INGESTION_PORT:-15342}:5341"
+    volumes:
+      - seq_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:80/health || curl -f http://localhost:80/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - shopsphere-network
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.55
+    container_name: shopsphere-jaeger
+    restart: unless-stopped
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "${JAEGER_PORT:-16686}:16686"
+      - "${JAEGER_OTLP_PORT:-4317}:4317"
+      - "${JAEGER_OTLP_HTTP_PORT:-4318}:4318"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:16686/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - shopsphere-network
+
+volumes:
+  sqlserver_data:
+    name: shopsphere_sqlserver_data
+  postgres_data:
+    name: shopsphere_postgres_data
+  mongodb_data:
+    name: shopsphere_mongodb_data
+  redis_data:
+    name: shopsphere_redis_data
+  rabbitmq_data:
+    name: shopsphere_rabbitmq_data
+  seq_data:
+    name: shopsphere_seq_data
+
+networks:
+  shopsphere-network:
+    name: shopsphere-network
+    driver: bridge
