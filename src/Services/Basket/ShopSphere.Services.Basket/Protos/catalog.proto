@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package catalog;
+
+option csharp_namespace = "ShopSphere.Services.Catalog.Grpc";
+
+service CatalogPriceChecker {
+  rpc GetItemPrices (GetItemPricesRequest) returns (GetItemPricesResponse);
+}
+
+message GetItemPricesRequest {
+  repeated string product_ids = 1;
+}
+
+message ProductPriceItem {
+  string product_id = 1;
+  double price = 2;
+  string currency = 3;
+  bool is_available = 4;
+}
+
+message GetItemPricesResponse {
+  repeated ProductPriceItem items = 1;
+}
