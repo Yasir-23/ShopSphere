@@ -19,6 +19,10 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Identity", "Identity", "{F4
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ShopSphere.Services.Identity", "src\Services\Identity\ShopSphere.Services.Identity\ShopSphere.Services.Identity.csproj", "{EB9E1F1D-BAC4-4F51-A4EE-6183F83E209D}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Catalog", "Catalog", "{1221A59B-0E54-40A3-A2E0-36D87E0529ED}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ShopSphere.Services.Catalog.Api", "src\Services\Catalog\ShopSphere.Services.Catalog.Api\ShopSphere.Services.Catalog.Api.csproj", "{70373B2A-7509-4B7C-A734-5D5846CADB07}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -89,6 +93,18 @@ Global
 		{EB9E1F1D-BAC4-4F51-A4EE-6183F83E209D}.Release|x64.Build.0 = Release|Any CPU
 		{EB9E1F1D-BAC4-4F51-A4EE-6183F83E209D}.Release|x86.ActiveCfg = Release|Any CPU
 		{EB9E1F1D-BAC4-4F51-A4EE-6183F83E209D}.Release|x86.Build.0 = Release|Any CPU
+		{70373B2A-7509-4B7C-A734-5D5846CADB07}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{70373B2A-7509-4B7C-A734-5D5846CADB07}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{70373B2A-7509-4B7C-A734-5D5846CADB07}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{70373B2A-7509-4B7C-A734-5D5846CADB07}.Debug|x64.Build.0 = Debug|Any CPU
+		{70373B2A-7509-4B7C-A734-5D5846CADB07}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{70373B2A-7509-4B7C-A734-5D5846CADB07}.Debug|x86.Build.0 = Debug|Any CPU
+		{70373B2A-7509-4B7C-A734-5D5846CADB07}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{70373B2A-7509-4B7C-A734-5D5846CADB07}.Release|Any CPU.Build.0 = Release|Any CPU
+		{70373B2A-7509-4B7C-A734-5D5846CADB07}.Release|x64.ActiveCfg = Release|Any CPU
+		{70373B2A-7509-4B7C-A734-5D5846CADB07}.Release|x64.Build.0 = Release|Any CPU
+		{70373B2A-7509-4B7C-A734-5D5846CADB07}.Release|x86.ActiveCfg = Release|Any CPU
+		{70373B2A-7509-4B7C-A734-5D5846CADB07}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -100,5 +116,7 @@ Global
 		{8296A62E-B2A6-4BA4-9042-27CEFE99BAF0} = {7266C4A9-E384-DC00-0EB6-47F6002CFBA7}
 		{F438C72B-8738-49D8-A42A-16C904C3106A} = {408FF69A-524F-4AF4-BB6F-0719519E561B}
 		{EB9E1F1D-BAC4-4F51-A4EE-6183F83E209D} = {F438C72B-8738-49D8-A42A-16C904C3106A}
+		{1221A59B-0E54-40A3-A2E0-36D87E0529ED} = {408FF69A-524F-4AF4-BB6F-0719519E561B}
+		{70373B2A-7509-4B7C-A734-5D5846CADB07} = {1221A59B-0E54-40A3-A2E0-36D87E0529ED}
 	EndGlobalSection
 EndGlobal
