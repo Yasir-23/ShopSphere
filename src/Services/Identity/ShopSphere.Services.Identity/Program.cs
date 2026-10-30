@@ -101,6 +101,10 @@ using (var scope = app.Services.CreateScope())
         var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<ApplicationRole>>();
         await IdentityDbSeeder.SeedRolesAsync(roleManager, logger);
         logger.LogInformation("Database roles seeded successfully.");
+
+        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+        await IdentityDbSeeder.SeedDefaultAdminUserAsync(userManager, app.Logger);
+        logger.LogInformation("Default administrator user seeded successfully.");
     }
     catch (Exception ex)
     {

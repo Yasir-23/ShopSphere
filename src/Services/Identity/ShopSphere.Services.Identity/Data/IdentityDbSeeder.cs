@@ -28,5 +28,47 @@ public static class IdentityDbSeeder
             }
         }
     }
-}
 
+    public static async Task SeedDefaultAdminUserAsync(UserManager<ApplicationUser> userManager, ILogger logger)
+    {
+        const string adminEmail = "admin@shopsphere.local";
+        var existingAdmin = await userManager.FindByEmailAsync(adminEmail);
+
+        if (existingAdmin is null)
+        {
+            var adminUser = new ApplicationUser
+            {
+                UserName = adminEmail,
+                Email = adminEmail,
+                FirstName = "Admin",
+                LastName = "User",
+                EmailConfirmed = true
+            };
+
+            var createResult = await userManager.CreateAsync(adminUser, "AdminPassword123!");
+            if (createResult.Succeeded)
+            {
+                logger.LogInformation("Successfully created default administrator user: {Email}", adminEmail);
+                var roleResult = await userManager.AddToRolesAsync(adminUser, new[] { "Administrator", "Admin" });
+                if (roleResult.Succeeded)
+                {
+                    logger.LogInformation("Assigned 'Administrator' and 'Admin' roles to: {Email}", adminEmail);
+                }
+                else
+                {
+                    logger.LogError("Failed to assign roles to default admin user: {Errors}",
+                        string.Join(", ", roleResult.Errors.Select(e => e.Description)));
+                }
+            }
+            else
+            {
+                logger.LogError("Failed to create default admin user: {Errors}",
+                    string.Join(", ", createResult.Errors.Select(e => e.Description)));
+            }
+        }
+        else
+        {
+            logger.LogInformation("Default administrator user already exists: {Email}", adminEmail);
+        }
+    }
+}
