@@ -90,6 +90,24 @@ public record PaymentCompletedEvent(
     DateTimeOffset Timestamp
 ) : IntegrationEvent, IPaymentCompletedEvent;
 
+// PaymentProcessedIntegrationEvent
+public interface IPaymentProcessedIntegrationEvent
+{
+    Guid PaymentId { get; }
+    Guid OrderId { get; }
+    decimal Amount { get; }
+    string TransactionId { get; }
+    DateTime ProcessedAtUtc { get; }
+}
+
+public record PaymentProcessedIntegrationEvent(
+    Guid PaymentId,
+    Guid OrderId,
+    decimal Amount,
+    string TransactionId,
+    DateTime ProcessedAtUtc
+) : IntegrationEvent, IPaymentProcessedIntegrationEvent;
+
 // PaymentFailedEvent
 public interface IPaymentFailedEvent
 {
@@ -103,6 +121,20 @@ public record PaymentFailedEvent(
     string Reason,
     DateTimeOffset Timestamp
 ) : IntegrationEvent, IPaymentFailedEvent;
+
+// PaymentFailedIntegrationEvent
+public interface IPaymentFailedIntegrationEvent
+{
+    Guid OrderId { get; }
+    string Reason { get; }
+    DateTime FailedAtUtc { get; }
+}
+
+public record PaymentFailedIntegrationEvent(
+    Guid OrderId,
+    string Reason,
+    DateTime FailedAtUtc
+) : IntegrationEvent, IPaymentFailedIntegrationEvent;
 
 // ReleaseStockCommand
 public interface IReleaseStockCommand
