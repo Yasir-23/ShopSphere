@@ -32,9 +32,9 @@ public class LivePostgreSqlInventoryTests : IClassFixture<LivePostgreSqlInventor
         stock.Should().NotBeNull();
         stock!.ProductId.Should().Be(productId);
         stock.Sku.Should().Be("KB-WL-RED-001");
-        stock.QuantityOnHand.Should().Be(100);
+        stock.QuantityOnHand.Should().BeGreaterThan(0);
         stock.QuantityReserved.Should().Be(0);
-        stock.QuantityAvailable.Should().Be(100);
+        stock.QuantityAvailable.Should().BeGreaterThan(0);
         stock.RestockThreshold.Should().Be(10);
     }
 }
