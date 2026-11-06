@@ -9,6 +9,7 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $EnvFile = Join-Path $ScriptDir ".env"
 
 $portConfigs = @(
+    @{ Service = "API Gateway (YARP)";        EnvVar = "API_GATEWAY_PORT";     Default = 5001 }
     @{ Service = "Microsoft SQL Server 2022"; EnvVar = "SQLSERVER_PORT";       Default = 11433 }
     @{ Service = "PostgreSQL 16";             EnvVar = "POSTGRES_PORT";        Default = 15432 }
     @{ Service = "MongoDB 7.0";               EnvVar = "MONGO_PORT";           Default = 27018 }

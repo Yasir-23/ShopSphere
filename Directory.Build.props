@@ -1,6 +1,9 @@
 <Project>
   <PropertyGroup>
     <UseSharedCompilation>false</UseSharedCompilation>
+    <BuildInParallel>false</BuildInParallel>
+    <RestoreBuildInParallel>false</RestoreBuildInParallel>
+    <NodeReuse>false</NodeReuse>
   </PropertyGroup>
 </Project>
 

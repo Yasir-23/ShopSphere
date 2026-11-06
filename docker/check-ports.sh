@@ -10,6 +10,7 @@ ENV_FILE="${SCRIPT_DIR}/.env"
 
 # Associative array of default ports
 declare -A PORT_DEFAULTS=(
+  ["API_GATEWAY_PORT"]="5001"
   ["SQLSERVER_PORT"]="11433"
   ["POSTGRES_PORT"]="15432"
   ["MONGO_PORT"]="27018"
@@ -24,6 +25,7 @@ declare -A PORT_DEFAULTS=(
 )
 
 declare -A SERVICE_NAMES=(
+  ["API_GATEWAY_PORT"]="API Gateway (YARP)"
   ["SQLSERVER_PORT"]="Microsoft SQL Server 2022"
   ["POSTGRES_PORT"]="PostgreSQL 16"
   ["MONGO_PORT"]="MongoDB 7.0"
@@ -86,7 +88,7 @@ echo "================================================================="
 
 has_conflicts=0
 
-for var in "SQLSERVER_PORT" "POSTGRES_PORT" "MONGO_PORT" "REDIS_PORT" "RABBITMQ_PORT" "RABBITMQ_MGMT_PORT" "SEQ_PORT" "SEQ_INGESTION_PORT" "JAEGER_PORT" "JAEGER_OTLP_PORT" "JAEGER_OTLP_HTTP_PORT"; do
+for var in "API_GATEWAY_PORT" "SQLSERVER_PORT" "POSTGRES_PORT" "MONGO_PORT" "REDIS_PORT" "RABBITMQ_PORT" "RABBITMQ_MGMT_PORT" "SEQ_PORT" "SEQ_INGESTION_PORT" "JAEGER_PORT" "JAEGER_OTLP_PORT" "JAEGER_OTLP_HTTP_PORT"; do
   val="${!var:-${PORT_DEFAULTS[$var]}}"
   service="${SERVICE_NAMES[$var]}"
 
