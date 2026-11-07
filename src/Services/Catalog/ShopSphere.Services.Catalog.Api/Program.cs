@@ -47,6 +47,9 @@ builder.Services.AddGrpc();
 builder.Services.AddValidatorsFromAssemblyContaining<CreateProductRequestValidator>();
 builder.Services.AddCarter();
 
+// Health Checks
+builder.Services.AddHealthChecks();
+
 // 7. Swagger / OpenAPI Documentation with JWT Bearer Security Scheme
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
@@ -120,6 +123,7 @@ app.UseAuthorization();
 
 // 10. Map Carter Minimal API Endpoints & gRPC Service
 app.MapCarter();
+ShopSphere.Common.Logging.HealthChecks.HealthCheckExtensions.MapShopSphereHealthChecks(app);
 app.MapGrpcService<CatalogPriceCheckerService>();
 
 app.MapGet("/", () => Results.Redirect("/swagger"));

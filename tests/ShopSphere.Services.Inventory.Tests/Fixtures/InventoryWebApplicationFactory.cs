@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using ShopSphere.Services.Inventory.Data;
+using ShopSphere.Tests.Common;
 
 namespace ShopSphere.Services.Inventory.Tests.Fixtures;
 
@@ -17,6 +18,8 @@ public class InventoryWebApplicationFactory : WebApplicationFactory<Program>
 
         builder.ConfigureTestServices(services =>
         {
+            services.AddTestResponseBodyFeatureWorkaround();
+
             // Remove existing DbContextOptions
             var descriptor = services.SingleOrDefault(d => d.ServiceType == typeof(DbContextOptions<InventoryDbContext>));
             if (descriptor != null)

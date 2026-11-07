@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
 using Serilog;
 using ShopSphere.Common.Logging;
+using ShopSphere.Common.Logging.HealthChecks;
 using ShopSphere.Common.Security;
 using ShopSphere.Services.Payment.Consumers;
 using ShopSphere.Services.Payment.Data;
@@ -78,6 +79,10 @@ builder.Services.AddShopSphereSecurity(builder.Configuration);
 // 6. FluentValidation & Carter Minimal API Modules
 builder.Services.AddValidatorsFromAssemblyContaining<ProcessPaymentRequestValidator>();
 builder.Services.AddCarter();
+
+// Health Checks
+builder.Services.AddHealthChecks()
+    .AddShopSphereDbContextCheck<PaymentDbContext>("payment-db");
 
 // 7. Swagger / OpenAPI Documentation with JWT Bearer Security Scheme
 builder.Services.AddEndpointsApiExplorer();
@@ -164,6 +169,7 @@ app.UseAuthorization();
 
 // 11. Map Carter Minimal API Endpoints
 app.MapCarter();
+ShopSphere.Common.Logging.HealthChecks.HealthCheckExtensions.MapShopSphereHealthChecks(app);
 app.MapGet("/", () => Results.Redirect("/swagger"));
 
 app.Run();

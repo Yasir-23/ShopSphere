@@ -7,6 +7,7 @@ using Moq;
 using ShopSphere.Services.Basket.Repositories;
 using ShopSphere.Services.Basket.Tests.Fakes;
 using ShopSphere.Services.Catalog.Grpc;
+using ShopSphere.Tests.Common;
 using StackExchange.Redis;
 
 namespace ShopSphere.Services.Basket.Tests.Fixtures;
@@ -61,6 +62,8 @@ public class BasketWebApplicationFactory : WebApplicationFactory<Program>
 
         builder.ConfigureTestServices(services =>
         {
+            services.AddTestResponseBodyFeatureWorkaround();
+
             // Remove Redis connection multiplexer
             var redisDescriptor = services.FirstOrDefault(d => d.ServiceType == typeof(IConnectionMultiplexer));
             if (redisDescriptor != null)

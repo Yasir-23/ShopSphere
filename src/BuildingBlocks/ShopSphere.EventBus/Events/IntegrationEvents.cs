@@ -6,9 +6,39 @@ public abstract record IntegrationEvent
     public DateTimeOffset CreationDate { get; init; } = DateTimeOffset.UtcNow;
 }
 
-public record OrderItemDto(string Sku, int Quantity);
+public record OrderItemDto(
+    string ProductId,
+    string ProductName,
+    decimal UnitPrice,
+    int Quantity,
+    decimal TotalPrice)
+{
+    public string Sku => ProductId;
 
-// OrderStartedEvent
+    public OrderItemDto() : this(string.Empty, string.Empty, 0m, 0, 0m) { }
+
+    public OrderItemDto(string sku, int quantity) : this(sku, sku, 0m, quantity, 0m) { }
+}
+
+// OrderCreatedIntegrationEvent
+public interface IOrderCreatedIntegrationEvent
+{
+    Guid OrderId { get; }
+    string CustomerId { get; }
+    decimal TotalAmount { get; }
+    IReadOnlyList<OrderItemDto> Items { get; }
+    DateTime CreatedAtUtc { get; }
+}
+
+public record OrderCreatedIntegrationEvent(
+    Guid OrderId,
+    string CustomerId,
+    decimal TotalAmount,
+    IReadOnlyList<OrderItemDto> Items,
+    DateTime CreatedAtUtc
+) : IntegrationEvent, IOrderCreatedIntegrationEvent;
+
+// OrderStartedEvent (Legacy / Alt naming compatibility)
 public interface IOrderStartedEvent
 {
     Guid OrderId { get; }
@@ -26,7 +56,51 @@ public record OrderStartedEvent(
     DateTimeOffset Timestamp
 ) : IntegrationEvent, IOrderStartedEvent;
 
-// StockReservedEvent
+// ReserveInventoryCommand
+public interface IReserveInventoryCommand
+{
+    Guid OrderId { get; }
+    IReadOnlyList<OrderItemDto> Items { get; }
+    DateTimeOffset Timestamp { get; }
+}
+
+public record ReserveInventoryCommand(
+    Guid OrderId,
+    IReadOnlyList<OrderItemDto> Items,
+    DateTimeOffset Timestamp
+) : IntegrationEvent, IReserveInventoryCommand
+{
+    public ReserveInventoryCommand(Guid orderId, IReadOnlyList<OrderItemDto> items)
+        : this(orderId, items, DateTimeOffset.UtcNow) { }
+}
+
+// InventoryReservedIntegrationEvent
+public interface IInventoryReservedIntegrationEvent
+{
+    Guid OrderId { get; }
+    DateTime ReservedAtUtc { get; }
+}
+
+public record InventoryReservedIntegrationEvent(
+    Guid OrderId,
+    DateTime ReservedAtUtc
+) : IntegrationEvent, IInventoryReservedIntegrationEvent;
+
+// InventoryReservationFailedIntegrationEvent
+public interface IInventoryReservationFailedIntegrationEvent
+{
+    Guid OrderId { get; }
+    string Reason { get; }
+    DateTime FailedAtUtc { get; }
+}
+
+public record InventoryReservationFailedIntegrationEvent(
+    Guid OrderId,
+    string Reason,
+    DateTime FailedAtUtc
+) : IntegrationEvent, IInventoryReservationFailedIntegrationEvent;
+
+// StockReservedEvent (Legacy / Alt naming compatibility)
 public interface IStockReservedEvent
 {
     Guid OrderId { get; }
@@ -40,7 +114,7 @@ public record StockReservedEvent(
     DateTimeOffset Timestamp
 ) : IntegrationEvent, IStockReservedEvent;
 
-// StockReservationFailedEvent
+// StockReservationFailedEvent (Legacy / Alt naming compatibility)
 public interface IStockReservationFailedEvent
 {
     Guid OrderId { get; }
@@ -136,7 +210,23 @@ public record PaymentFailedIntegrationEvent(
     DateTime FailedAtUtc
 ) : IntegrationEvent, IPaymentFailedIntegrationEvent;
 
-// ReleaseStockCommand
+// ReleaseInventoryCommand
+public interface IReleaseInventoryCommand
+{
+    Guid OrderId { get; }
+    IReadOnlyList<OrderItemDto> Items { get; }
+    string Reason { get; }
+    DateTimeOffset Timestamp { get; }
+}
+
+public record ReleaseInventoryCommand(
+    Guid OrderId,
+    IReadOnlyList<OrderItemDto> Items,
+    string Reason,
+    DateTimeOffset Timestamp
+) : IntegrationEvent, IReleaseInventoryCommand;
+
+// ReleaseStockCommand (Legacy / Alt naming compatibility)
 public interface IReleaseStockCommand
 {
     Guid OrderId { get; }

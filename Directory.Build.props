@@ -4,6 +4,12 @@
     <BuildInParallel>false</BuildInParallel>
     <RestoreBuildInParallel>false</RestoreBuildInParallel>
     <NodeReuse>false</NodeReuse>
+    <RollForward Condition="'$(IsTestProject)' == 'true'">Major</RollForward>
   </PropertyGroup>
+
+  <ItemGroup Condition="'$(IsTestProject)' == 'true'">
+    <Compile Include="$(MSBuildThisFileDirectory)tests\Common\TestResponseBodyFeatureWorkaround.cs" Link="Common\TestResponseBodyFeatureWorkaround.cs" />
+    <PackageReference Include="System.IO.Pipelines" Version="9.0.2" />
+  </ItemGroup>
 </Project>
 

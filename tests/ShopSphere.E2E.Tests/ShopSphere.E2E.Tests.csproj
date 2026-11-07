@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <SuppressCheckGrpcNetClientFactoryVersion>true</SuppressCheckGrpcNetClientFactoryVersion>
+    <RollForward>Major</RollForward>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="FluentAssertions" Version="6.12.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="8.0.11" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="8.0.11" />
+    <PackageReference Include="MassTransit.TestFramework" Version="8.3.6" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\BuildingBlocks\ShopSphere.EventBus\ShopSphere.EventBus.csproj" />
+    <ProjectReference Include="..\..\src\BuildingBlocks\ShopSphere.Common.Logging\ShopSphere.Common.Logging.csproj" />
+    <ProjectReference Include="..\..\src\BuildingBlocks\ShopSphere.Common.Security\ShopSphere.Common.Security.csproj" />
+    <ProjectReference Include="..\..\src\BuildingBlocks\ShopSphere.Common.Resilience\ShopSphere.Common.Resilience.csproj" />
+    <ProjectReference Include="..\..\src\Gateway\ShopSphere.ApiGateway.csproj" />
+    <ProjectReference Include="..\..\src\Services\Identity\ShopSphere.Services.Identity\ShopSphere.Services.Identity.csproj" />
+    <ProjectReference Include="..\..\src\Services\Catalog\ShopSphere.Services.Catalog.Api\ShopSphere.Services.Catalog.Api.csproj" />
+    <ProjectReference Include="..\..\src\Services\Basket\ShopSphere.Services.Basket\ShopSphere.Services.Basket.csproj" />
+    <ProjectReference Include="..\..\src\Services\Inventory\ShopSphere.Services.Inventory\ShopSphere.Services.Inventory.csproj" />
+    <ProjectReference Include="..\..\src\Services\Ordering\ShopSphere.Services.Ordering.Api\ShopSphere.Services.Ordering.Api.csproj" />
+    <ProjectReference Include="..\..\src\Services\Ordering\ShopSphere.Services.Ordering.Application\ShopSphere.Services.Ordering.Application.csproj" />
+    <ProjectReference Include="..\..\src\Services\Ordering\ShopSphere.Services.Ordering.Infrastructure\ShopSphere.Services.Ordering.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Services\Ordering\ShopSphere.Services.Ordering.Domain\ShopSphere.Services.Ordering.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Services\Payment\ShopSphere.Services.Payment.csproj" />
+  </ItemGroup>
+
+</Project>

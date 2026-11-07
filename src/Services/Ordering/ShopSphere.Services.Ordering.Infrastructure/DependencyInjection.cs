@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using ShopSphere.Services.Ordering.Application.Repositories;
 using ShopSphere.Services.Ordering.Infrastructure.Persistence;
 using ShopSphere.Services.Ordering.Infrastructure.Repositories;
+using ShopSphere.Services.Ordering.Infrastructure.Sagas;
 
 namespace ShopSphere.Services.Ordering.Infrastructure;
 
@@ -25,10 +26,17 @@ public static class DependencyInjection
 
         services.AddScoped<IOrderRepository, OrderRepository>();
 
-        // 2. MassTransit with RabbitMQ
+        // 2. MassTransit with RabbitMQ & EF Core Saga Persistence
         services.AddMassTransit(busConfigurator =>
         {
             busConfigurator.SetKebabCaseEndpointNameFormatter();
+
+            busConfigurator.AddSagaStateMachine<OrderStateMachine, OrderStateData>()
+                .EntityFrameworkRepository(r =>
+                {
+                    r.ConcurrencyMode = ConcurrencyMode.Optimistic;
+                    r.ExistingDbContext<OrderingDbContext>();
+                });
 
             busConfigurator.UsingRabbitMq((context, cfg) =>
             {
@@ -66,4 +74,3 @@ public static class DependencyInjection
         return services;
     }
 }
-

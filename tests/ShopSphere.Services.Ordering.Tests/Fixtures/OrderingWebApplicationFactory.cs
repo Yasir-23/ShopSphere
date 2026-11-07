@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Moq;
 using ShopSphere.Services.Ordering.Infrastructure.Persistence;
+using ShopSphere.Tests.Common;
 
 namespace ShopSphere.Services.Ordering.Tests.Fixtures;
 
@@ -21,6 +22,8 @@ public class OrderingWebApplicationFactory : WebApplicationFactory<Program>
 
         builder.ConfigureTestServices(services =>
         {
+            services.AddTestResponseBodyFeatureWorkaround();
+
             // 1. Replace SQL Server DbContext with isolated InMemory DbContext
             var dbDescriptor = services.SingleOrDefault(d => d.ServiceType == typeof(DbContextOptions<OrderingDbContext>));
             if (dbDescriptor != null)

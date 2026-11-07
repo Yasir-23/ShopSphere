@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
+using ShopSphere.Tests.Common;
 
 namespace ShopSphere.Services.Inventory.Tests.Fixtures;
 
@@ -9,6 +11,10 @@ public class LivePostgreSqlInventoryWebApplicationFactory : WebApplicationFactor
     {
         // Uses the real PostgreSQL database configured in appsettings.json
         builder.UseEnvironment("Development");
+        builder.ConfigureTestServices(services =>
+        {
+            services.AddTestResponseBodyFeatureWorkaround();
+        });
     }
 }
 

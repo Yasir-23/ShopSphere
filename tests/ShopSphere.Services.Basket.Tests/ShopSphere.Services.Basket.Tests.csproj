@@ -8,6 +8,7 @@
     <IsTestProject>true</IsTestProject>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <SuppressCheckGrpcNetClientFactoryVersion>true</SuppressCheckGrpcNetClientFactoryVersion>
+    <RollForward>Major</RollForward>
   </PropertyGroup>
 
   <ItemGroup>

@@ -1,0 +1,411 @@
+name: shopsphere-prod
+
+services:
+  # =============================================================================
+  # Backing Infrastructure
+  # =============================================================================
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: shopsphere-sqlserver-prod
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "${MSSQL_SA_PASSWORD:-ShopSphere_Dev_2026!}"
+      SA_PASSWORD: "${MSSQL_SA_PASSWORD:-ShopSphere_Dev_2026!}"
+      MSSQL_PID: "Developer"
+    ports:
+      - "${SQLSERVER_PORT:-11433}:1433"
+    volumes:
+      - sqlserver_prod_data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$${MSSQL_SA_PASSWORD}\" -C -Q 'SELECT 1' || /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P \"$${MSSQL_SA_PASSWORD}\" -Q 'SELECT 1' || /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$${SA_PASSWORD}\" -C -Q 'SELECT 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - shopsphere-network
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: shopsphere-postgres-prod
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER:-postgres}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-ShopSphere_Postgres_2026!}"
+      POSTGRES_DB: "${POSTGRES_DB:-shopsphere_inventory}"
+    ports:
+      - "${POSTGRES_PORT:-15432}:5432"
+    volumes:
+      - postgres_prod_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - shopsphere-network
+
+  mongodb:
+    image: mongo:7.0
+    container_name: shopsphere-mongodb-prod
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: "${MONGO_INITDB_ROOT_USERNAME:-mongoadmin}"
+      MONGO_INITDB_ROOT_PASSWORD: "${MONGO_INITDB_ROOT_PASSWORD:-ShopSphere_Mongo_2026!}"
+    ports:
+      - "${MONGO_PORT:-27018}:27017"
+    volumes:
+      - mongodb_prod_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - shopsphere-network
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: shopsphere-redis-prod
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "${REDIS_PORT:-16379}:6379"
+    volumes:
+      - redis_prod_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - shopsphere-network
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: shopsphere-rabbitmq-prod
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: "${RABBITMQ_DEFAULT_USER:-shopsphere}"
+      RABBITMQ_DEFAULT_PASS: "${RABBITMQ_DEFAULT_PASS:-ShopSphere_RabbitMQ_2026!}"
+    ports:
+      - "${RABBITMQ_PORT:-15672}:5672"
+      - "${RABBITMQ_MGMT_PORT:-25672}:15672"
+    volumes:
+      - rabbitmq_prod_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - shopsphere-network
+
+  seq:
+    image: datalust/seq:latest
+    container_name: shopsphere-seq-prod
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      SEQ_FIRSTRUN_NOAUTHENTICATION: "true"
+    ports:
+      - "${SEQ_PORT:-15341}:80"
+      - "${SEQ_INGESTION_PORT:-15342}:5341"
+    volumes:
+      - seq_prod_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:80/health || curl -f http://localhost:80/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - shopsphere-network
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.55
+    container_name: shopsphere-jaeger-prod
+    restart: unless-stopped
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "${JAEGER_PORT:-16686}:16686"
+      - "${JAEGER_OTLP_PORT:-4317}:4317"
+      - "${JAEGER_OTLP_HTTP_PORT:-4318}:4318"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:16686/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - shopsphere-network
+
+  # =============================================================================
+  # Application Microservices
+  # =============================================================================
+  identity-service:
+    build:
+      context: ..
+      dockerfile: src/Services/Identity/ShopSphere.Services.Identity/Dockerfile
+    container_name: shopsphere-identity-prod
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Production"
+      ConnectionStrings__IdentityDb: "Server=sqlserver,1433;Database=ShopSphere_Identity;User Id=sa;Password=${MSSQL_SA_PASSWORD:-ShopSphere_Dev_2026!};TrustServerCertificate=True;MultipleActiveResultSets=True;"
+      Jwt__SecretKey: "${JWT_SECRET:-ShopSphere_Super_Secret_Jwt_Signing_Key_2026_Must_Be_Long_Enough!}"
+      Jwt__Issuer: "${JWT_ISSUER:-ShopSphere}"
+      Jwt__Audience: "${JWT_AUDIENCE:-ShopSphere.Clients}"
+      Seq__ServerUrl: "http://seq:80"
+      OpenTelemetry__OtlpEndpoint: "http://jaeger:4317"
+    ports:
+      - "${PORT_IDENTITY:-5010}:8080"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      seq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/health/live || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - shopsphere-network
+
+  catalog-service:
+    build:
+      context: ..
+      dockerfile: src/Services/Catalog/ShopSphere.Services.Catalog.Api/Dockerfile
+    container_name: shopsphere-catalog-prod
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Production"
+      MongoDb__ConnectionString: "mongodb://${MONGO_INITDB_ROOT_USERNAME:-mongoadmin}:${MONGO_INITDB_ROOT_PASSWORD:-ShopSphere_Mongo_2026!}@mongodb:27017/ShopSphere_Catalog?authSource=admin"
+      MongoDb__DatabaseName: "ShopSphere_Catalog"
+      Jwt__SecretKey: "${JWT_SECRET:-ShopSphere_Super_Secret_Jwt_Signing_Key_2026_Must_Be_Long_Enough!}"
+      Jwt__Issuer: "${JWT_ISSUER:-ShopSphere}"
+      Jwt__Audience: "${JWT_AUDIENCE:-ShopSphere.Clients}"
+      Seq__ServerUrl: "http://seq:80"
+      OpenTelemetry__OtlpEndpoint: "http://jaeger:4317"
+    ports:
+      - "${PORT_CATALOG:-5020}:8080"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      seq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/health/live || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - shopsphere-network
+
+  basket-service:
+    build:
+      context: ..
+      dockerfile: src/Services/Basket/ShopSphere.Services.Basket/Dockerfile
+    container_name: shopsphere-basket-prod
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Production"
+      Redis__ConnectionString: "redis:6379"
+      CatalogService__GrpcUrl: "http://catalog-service:8080"
+      Services__Catalog__GrpcUrl: "http://catalog-service:8080"
+      Jwt__SecretKey: "${JWT_SECRET:-ShopSphere_Super_Secret_Jwt_Signing_Key_2026_Must_Be_Long_Enough!}"
+      Jwt__Issuer: "${JWT_ISSUER:-ShopSphere}"
+      Jwt__Audience: "${JWT_AUDIENCE:-ShopSphere.Clients}"
+      Seq__ServerUrl: "http://seq:80"
+      OpenTelemetry__OtlpEndpoint: "http://jaeger:4317"
+    ports:
+      - "${PORT_BASKET:-5050}:8080"
+    depends_on:
+      redis:
+        condition: service_healthy
+      seq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/health/live || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - shopsphere-network
+
+  inventory-service:
+    build:
+      context: ..
+      dockerfile: src/Services/Inventory/ShopSphere.Services.Inventory/Dockerfile
+    container_name: shopsphere-inventory-prod
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Production"
+      ConnectionStrings__InventoryDb: "Host=postgres;Port=5432;Database=shopsphere_inventory;Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-ShopSphere_Postgres_2026!};"
+      Jwt__SecretKey: "${JWT_SECRET:-ShopSphere_Super_Secret_Jwt_Signing_Key_2026_Must_Be_Long_Enough!}"
+      Jwt__Issuer: "${JWT_ISSUER:-ShopSphere}"
+      Jwt__Audience: "${JWT_AUDIENCE:-ShopSphere.Clients}"
+      Seq__ServerUrl: "http://seq:80"
+      OpenTelemetry__OtlpEndpoint: "http://jaeger:4317"
+    ports:
+      - "${PORT_INVENTORY:-5030}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      seq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/health/live || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - shopsphere-network
+
+  ordering-service:
+    build:
+      context: ..
+      dockerfile: src/Services/Ordering/ShopSphere.Services.Ordering.Api/Dockerfile
+    container_name: shopsphere-ordering-prod
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Production"
+      ConnectionStrings__OrderingDb: "Server=sqlserver,1433;Database=ShopSphere_Ordering;User Id=sa;Password=${MSSQL_SA_PASSWORD:-ShopSphere_Dev_2026!};TrustServerCertificate=True;MultipleActiveResultSets=True;"
+      RabbitMQ__Host: "rabbitmq"
+      RabbitMQ__Port: "5672"
+      RabbitMQ__Username: "${RABBITMQ_DEFAULT_USER:-shopsphere}"
+      RabbitMQ__Password: "${RABBITMQ_DEFAULT_PASS:-ShopSphere_RabbitMQ_2026!}"
+      Jwt__SecretKey: "${JWT_SECRET:-ShopSphere_Super_Secret_Jwt_Signing_Key_2026_Must_Be_Long_Enough!}"
+      Jwt__Issuer: "${JWT_ISSUER:-ShopSphere}"
+      Jwt__Audience: "${JWT_AUDIENCE:-ShopSphere.Clients}"
+      Seq__ServerUrl: "http://seq:80"
+      OpenTelemetry__OtlpEndpoint: "http://jaeger:4317"
+    ports:
+      - "${PORT_ORDERING:-5040}:8080"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      seq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/health/live || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - shopsphere-network
+
+  payment-service:
+    build:
+      context: ..
+      dockerfile: src/Services/Payment/Dockerfile
+    container_name: shopsphere-payment-prod
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Production"
+      ConnectionStrings__PaymentDb: "Host=postgres;Port=5432;Database=shopsphere_payment;Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-ShopSphere_Postgres_2026!};"
+      RabbitMQ__Host: "rabbitmq"
+      RabbitMQ__Port: "5672"
+      RabbitMQ__Username: "${RABBITMQ_DEFAULT_USER:-shopsphere}"
+      RabbitMQ__Password: "${RABBITMQ_DEFAULT_PASS:-ShopSphere_RabbitMQ_2026!}"
+      Payment__UseMockProvider: "true"
+      Jwt__SecretKey: "${JWT_SECRET:-ShopSphere_Super_Secret_Jwt_Signing_Key_2026_Must_Be_Long_Enough!}"
+      Jwt__Issuer: "${JWT_ISSUER:-ShopSphere}"
+      Jwt__Audience: "${JWT_AUDIENCE:-ShopSphere.Clients}"
+      Seq__ServerUrl: "http://seq:80"
+      OpenTelemetry__OtlpEndpoint: "http://jaeger:4317"
+    ports:
+      - "${PORT_PAYMENT:-5060}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      seq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/health/live || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - shopsphere-network
+
+  # =============================================================================
+  # API Gateway (YARP Reverse Proxy)
+  # =============================================================================
+  api-gateway:
+    build:
+      context: ..
+      dockerfile: src/Gateway/Dockerfile
+    container_name: shopsphere-gateway-prod
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Production"
+      ReverseProxy__Clusters__identity-cluster__Destinations__identity-destination__Address: "http://identity-service:8080"
+      ReverseProxy__Clusters__catalog-cluster__Destinations__catalog-destination__Address: "http://catalog-service:8080"
+      ReverseProxy__Clusters__basket-cluster__Destinations__basket-destination__Address: "http://basket-service:8080"
+      ReverseProxy__Clusters__inventory-cluster__Destinations__inventory-destination__Address: "http://inventory-service:8080"
+      ReverseProxy__Clusters__ordering-cluster__Destinations__ordering-destination__Address: "http://ordering-service:8080"
+      ReverseProxy__Clusters__payment-cluster__Destinations__payment-destination__Address: "http://payment-service:8080"
+      Seq__ServerUrl: "http://seq:80"
+      OpenTelemetry__OtlpEndpoint: "http://jaeger:4317"
+    ports:
+      - "${PORT_GATEWAY:-5001}:8080"
+    depends_on:
+      identity-service:
+        condition: service_healthy
+      catalog-service:
+        condition: service_healthy
+      basket-service:
+        condition: service_healthy
+      inventory-service:
+        condition: service_healthy
+      ordering-service:
+        condition: service_healthy
+      payment-service:
+        condition: service_healthy
+      seq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/health/live || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - shopsphere-network
+
+volumes:
+  sqlserver_prod_data:
+    name: shopsphere_sqlserver_prod_data
+  postgres_prod_data:
+    name: shopsphere_postgres_prod_data
+  mongodb_prod_data:
+    name: shopsphere_mongodb_prod_data
+  redis_prod_data:
+    name: shopsphere_redis_prod_data
+  rabbitmq_prod_data:
+    name: shopsphere_rabbitmq_prod_data
+  seq_prod_data:
+    name: shopsphere_seq_prod_data
+
+networks:
+  shopsphere-network:
+    name: shopsphere-network
+    driver: bridge
+

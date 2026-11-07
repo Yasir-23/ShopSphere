@@ -120,6 +120,7 @@ app.UseRateLimiter();
 
 // 8. Health & Diagnostic Endpoints
 app.MapHealthChecks("/health");
+ShopSphere.Common.Logging.HealthChecks.HealthCheckExtensions.MapShopSphereHealthChecks(app);
 app.MapGet("/ping", () => Results.Ok(new { status = "Healthy", timestamp = DateTime.UtcNow }));
 app.MapGet("/test/ratelimit", () => Results.Ok(new { status = "Ok" }))
    .RequireRateLimiting("fixed-window-ip");

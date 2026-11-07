@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
 using ShopSphere.Common.Logging;
+using ShopSphere.Common.Logging.HealthChecks;
 using ShopSphere.Common.Security;
 using ShopSphere.Services.Identity.Data;
 using ShopSphere.Services.Identity.Data.Entities;
@@ -46,6 +47,10 @@ builder.Services.AddScoped<ITokenService, TokenService>();
 // 6. FluentValidation & Carter Minimal API Modules
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();
 builder.Services.AddCarter();
+
+// Health Checks
+builder.Services.AddHealthChecks()
+    .AddShopSphereDbContextCheck<IdentityDbContext>("identity-db");
 
 // 7. Swagger/OpenAPI Documentation with JWT Bearer Security Scheme
 builder.Services.AddEndpointsApiExplorer();
@@ -126,5 +131,6 @@ app.UseAuthorization();
 
 // 10. Map Carter Endpoints
 app.MapCarter();
+ShopSphere.Common.Logging.HealthChecks.HealthCheckExtensions.MapShopSphereHealthChecks(app);
 
 app.Run();

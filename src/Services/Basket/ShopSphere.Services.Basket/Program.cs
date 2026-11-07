@@ -59,6 +59,9 @@ builder.Services.AddShopSphereSecurity(builder.Configuration);
 builder.Services.AddValidatorsFromAssemblyContaining<UpdateBasketRequestValidator>();
 builder.Services.AddCarter();
 
+// Health Checks
+builder.Services.AddHealthChecks();
+
 // 6. Swagger / OpenAPI Documentation with JWT Bearer Security Scheme
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
@@ -114,6 +117,7 @@ app.UseAuthorization();
 
 // 9. Map Carter Minimal API Endpoints
 app.MapCarter();
+ShopSphere.Common.Logging.HealthChecks.HealthCheckExtensions.MapShopSphereHealthChecks(app);
 app.MapGet("/", () => Results.Redirect("/swagger"));
 
 app.Run();

@@ -61,6 +61,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ShopSphere.ApiGateway", "sr
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ShopSphere.ApiGateway.Tests", "tests\ShopSphere.ApiGateway.Tests\ShopSphere.ApiGateway.Tests.csproj", "{A7FF0E49-9FA8-4DDF-A9AF-D939E863917E}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ShopSphere.E2E.Tests", "tests\ShopSphere.E2E.Tests\ShopSphere.E2E.Tests.csproj", "{B004F5B3-EFEC-4EDD-9B49-D8D23EADA173}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -299,6 +301,18 @@ Global
 		{A7FF0E49-9FA8-4DDF-A9AF-D939E863917E}.Release|x64.Build.0 = Release|Any CPU
 		{A7FF0E49-9FA8-4DDF-A9AF-D939E863917E}.Release|x86.ActiveCfg = Release|Any CPU
 		{A7FF0E49-9FA8-4DDF-A9AF-D939E863917E}.Release|x86.Build.0 = Release|Any CPU
+		{B004F5B3-EFEC-4EDD-9B49-D8D23EADA173}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B004F5B3-EFEC-4EDD-9B49-D8D23EADA173}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B004F5B3-EFEC-4EDD-9B49-D8D23EADA173}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{B004F5B3-EFEC-4EDD-9B49-D8D23EADA173}.Debug|x64.Build.0 = Debug|Any CPU
+		{B004F5B3-EFEC-4EDD-9B49-D8D23EADA173}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{B004F5B3-EFEC-4EDD-9B49-D8D23EADA173}.Debug|x86.Build.0 = Debug|Any CPU
+		{B004F5B3-EFEC-4EDD-9B49-D8D23EADA173}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B004F5B3-EFEC-4EDD-9B49-D8D23EADA173}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B004F5B3-EFEC-4EDD-9B49-D8D23EADA173}.Release|x64.ActiveCfg = Release|Any CPU
+		{B004F5B3-EFEC-4EDD-9B49-D8D23EADA173}.Release|x64.Build.0 = Release|Any CPU
+		{B004F5B3-EFEC-4EDD-9B49-D8D23EADA173}.Release|x86.ActiveCfg = Release|Any CPU
+		{B004F5B3-EFEC-4EDD-9B49-D8D23EADA173}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -329,5 +343,6 @@ Global
 		{719B3DA6-1CE8-4736-9D88-E048DF195A54} = {2A5548A6-0D4A-4B8D-BA0C-79ABD8839875}
 		{99E4CBB1-F247-4B1C-84AB-637152726DBF} = {23A04A87-9037-4BA5-AEF5-14D7D4E332F6}
 		{A7FF0E49-9FA8-4DDF-A9AF-D939E863917E} = {2A5548A6-0D4A-4B8D-BA0C-79ABD8839875}
+		{B004F5B3-EFEC-4EDD-9B49-D8D23EADA173} = {2A5548A6-0D4A-4B8D-BA0C-79ABD8839875}
 	EndGlobalSection
 EndGlobal

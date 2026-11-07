@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using ShopSphere.Services.Payment.Data;
+using ShopSphere.Tests.Common;
 
 namespace ShopSphere.Services.Payment.Tests.Fixtures;
 
@@ -27,6 +28,8 @@ public class PaymentWebApplicationFactory : WebApplicationFactory<Program>
 
         builder.ConfigureTestServices(services =>
         {
+            services.AddTestResponseBodyFeatureWorkaround();
+
             // Replace DbContext with EF Core InMemory provider
             var dbContextDescriptor = services.FirstOrDefault(d => d.ServiceType == typeof(DbContextOptions<PaymentDbContext>));
             if (dbContextDescriptor != null)

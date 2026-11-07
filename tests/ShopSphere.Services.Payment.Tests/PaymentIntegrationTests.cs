@@ -11,6 +11,7 @@ using Microsoft.Extensions.Logging;
 using Moq;
 using ShopSphere.EventBus.Events;
 using ShopSphere.Services.Ordering.Application.Events;
+using OrderCreatedIntegrationEvent = ShopSphere.Services.Ordering.Application.Events.OrderCreatedIntegrationEvent;
 using ShopSphere.Services.Payment.Consumers;
 using ShopSphere.Services.Payment.Data;
 using ShopSphere.Services.Payment.Entities;

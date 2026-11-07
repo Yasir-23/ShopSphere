@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
 using Serilog;
 using ShopSphere.Common.Logging;
+using ShopSphere.Common.Logging.HealthChecks;
 using ShopSphere.Common.Security;
 using ShopSphere.Services.Inventory.Data;
 using ShopSphere.Services.Inventory.Services;
@@ -38,6 +39,10 @@ builder.Services.AddShopSphereSecurity(builder.Configuration);
 // 5. FluentValidation & Carter Minimal API Modules
 builder.Services.AddValidatorsFromAssemblyContaining<ReserveStockRequestValidator>();
 builder.Services.AddCarter();
+
+// Health Checks
+builder.Services.AddHealthChecks()
+    .AddShopSphereDbContextCheck<InventoryDbContext>("inventory-db");
 
 // 6. Swagger / OpenAPI Documentation with JWT Bearer Security Scheme
 builder.Services.AddEndpointsApiExplorer();
@@ -126,6 +131,7 @@ app.UseAuthorization();
 
 // 10. Map Carter Minimal API Endpoints
 app.MapCarter();
+ShopSphere.Common.Logging.HealthChecks.HealthCheckExtensions.MapShopSphereHealthChecks(app);
 app.MapGet("/", () => Results.Redirect("/swagger"));
 
 app.Run();

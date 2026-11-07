@@ -7,6 +7,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 using Yarp.ReverseProxy.Configuration;
+using ShopSphere.Tests.Common;
 
 namespace ShopSphere.ApiGateway.Tests;
 
@@ -15,6 +16,10 @@ public class GatewayWebApplicationFactory : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
+        builder.ConfigureServices(services =>
+        {
+            services.AddTestResponseBodyFeatureWorkaround();
+        });
         builder.ConfigureAppConfiguration((_, config) =>
         {
             config.AddInMemoryCollection(new Dictionary<string, string?>
