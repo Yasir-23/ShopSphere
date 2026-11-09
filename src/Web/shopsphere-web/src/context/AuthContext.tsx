@@ -39,6 +39,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const parsed = JSON.parse(stored);
         if (parsed?.token && parsed?.email) {
           setUser(parsed);
+          localStorage.setItem("token", parsed.token);
         }
       }
     } catch (err) {
@@ -92,6 +93,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         setUser(newUser);
         localStorage.setItem(STORAGE_KEY, JSON.stringify(newUser));
+        localStorage.setItem("token", token);
         return true;
       } catch (err: any) {
         const msg =
@@ -121,6 +123,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setError(null);
     try {
       localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem("token");
     } catch (err) {
       console.error("Failed to clear local storage:", err);
     }

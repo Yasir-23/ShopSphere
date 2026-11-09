@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useCallback } from "react";
 import { getProducts, getStock, Product, InventoryStock } from "@/lib/catalog";
+import { useCart } from "@/context/CartContext";
 import { 
   Package, 
   Laptop,
@@ -16,6 +17,7 @@ import {
 } from "lucide-react";
 
 export const ProductGrid: React.FC = () => {
+  const { addToCart } = useCart();
   const [products, setProducts] = useState<Product[]>([]);
   const [stockMap, setStockMap] = useState<Record<string, InventoryStock | null>>({});
   const [loading, setLoading] = useState<boolean>(true);
@@ -65,6 +67,16 @@ export const ProductGrid: React.FC = () => {
 
   const handleAddToCart = (product: Product, availableUnits: number) => {
     if (availableUnits <= 0) return;
+    addToCart(
+      {
+        id: product.id,
+        name: product.name,
+        price: product.price,
+        imageUrl: product.imageUrl,
+        category: product.category,
+      },
+      1
+    );
     setCartNotification(`Added "${product.name}" to basket! (Available: ${availableUnits} units)`);
     setTimeout(() => {
       setCartNotification(null);

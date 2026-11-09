@@ -2,9 +2,11 @@
 
 import React, { useEffect, useState, useCallback } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { useCart } from "@/context/CartContext";
 import { checkGatewayHealth } from "@/lib/catalog";
 import { 
   ShoppingBag, 
+  ShoppingCart,
   Activity, 
   User as UserIcon, 
   ShieldCheck, 
@@ -15,6 +17,7 @@ import {
 
 export const Navbar: React.FC = () => {
   const { user, loginAsCustomer, loginAsAdmin, logout, loading: authLoading, error, clearError } = useAuth();
+  const { totalItems, openCart } = useCart();
   const [gatewayOnline, setGatewayOnline] = useState<boolean | null>(null);
   const [checkingHealth, setCheckingHealth] = useState<boolean>(false);
 
@@ -148,6 +151,23 @@ export const Navbar: React.FC = () => {
                 </button>
               )}
             </div>
+
+            {/* Shopping Cart Drawer Trigger Button */}
+            <button
+              onClick={openCart}
+              aria-label="Open Shopping Cart"
+              title="View Shopping Cart"
+              className="relative flex items-center justify-center rounded-lg border border-slate-200 bg-white p-2 text-slate-700 shadow-xs hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 transition"
+            >
+              <ShoppingCart className="h-4 w-4" />
+              <span className={`absolute -top-1.5 -right-1.5 flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[10px] font-bold shadow-xs transition ${
+                totalItems > 0 
+                  ? "bg-indigo-600 text-white animate-in zoom-in-75" 
+                  : "bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300"
+              }`}>
+                {totalItems}
+              </span>
+            </button>
 
           </div>
         </div>

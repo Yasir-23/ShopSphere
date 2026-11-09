@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { AuthProvider } from "@/context/AuthContext";
+import { CartProvider } from "@/context/CartContext";
 
 export const metadata: Metadata = {
   title: "ShopSphere | Microservices Platform Showcase",
-  description: "Distributed e-commerce microservices platform powered by .NET 8, YARP Gateway, MongoDB, and PostgreSQL.",
+  description: "Distributed e-commerce microservices platform powered by .NET 8, YARP Gateway, Redis Basket, MongoDB, and PostgreSQL.",
 };
 
 export default function RootLayout({
@@ -19,7 +20,9 @@ export default function RootLayout({
         suppressHydrationWarning
       >
         <AuthProvider>
-          {children}
+          <CartProvider>
+            {children}
+          </CartProvider>
         </AuthProvider>
       </body>
     </html>
