@@ -1,161 +1,120 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import React, { createContext, useCallback, useContext, useMemo, useSyncExternalStore } from "react";
 import { api } from "@/lib/api";
+import { getServerSession, getSession, isAdminRole, setSession, subscribeSession, type Session } from "@/lib/session";
 
-export interface User {
+export interface AuthUser {
+  id: string;
   email: string;
-  role: string;
-  token: string;
-  firstName?: string;
-  lastName?: string;
+  firstName: string;
+  lastName: string;
+  roles: string[];
+  isAdmin: boolean;
 }
 
-interface AuthContextType {
-  user: User | null;
-  loading: boolean;
-  error: string | null;
-  login: (email: string, password: string, defaultRole?: string) => Promise<boolean>;
-  loginAsCustomer: () => Promise<boolean>;
-  loginAsAdmin: () => Promise<boolean>;
+export interface RegisterInput {
+  firstName: string;
+  lastName: string;
+  email: string;
+  password: string;
+}
+
+interface AuthActions {
+  login: (email: string, password: string) => Promise<AuthUser>;
+  register: (input: RegisterInput) => Promise<AuthUser>;
   logout: () => void;
-  clearError: () => void;
 }
 
-const STORAGE_KEY = "shopsphere_user";
+interface AuthContextValue extends AuthActions {
+  user: AuthUser | null;
+  /** False until the browser session has been read; guards must wait for it. */
+  ready: boolean;
+}
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+export const DEMO_ACCOUNTS = {
+  customer: { email: "customer@shopsphere.local", password: "SecurePassword123!" },
+  admin: { email: "admin@shopsphere.local", password: "AdminPassword123!" },
+} as const;
 
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
+// The context carries only actions. Session state is read with
+// useSyncExternalStore inside useAuth() so every component hydrates against the
+// server snapshot (signed out) on its own schedule — including late-hydrating
+// Suspense boundaries — and avoids hydration mismatches.
+const AuthContext = createContext<AuthActions | undefined>(undefined);
 
-  // Initialize from localStorage on mount
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (parsed?.token && parsed?.email) {
-          setUser(parsed);
-          localStorage.setItem("token", parsed.token);
-        }
-      }
-    } catch (err) {
-      console.error("Failed to restore auth session:", err);
-    } finally {
-      setLoading(false);
-    }
+const noopSubscribe = () => () => {};
+
+function toUser(s: Session): AuthUser {
+  return {
+    id: s.userId,
+    email: s.email,
+    firstName: s.firstName,
+    lastName: s.lastName,
+    roles: s.roles,
+    isAdmin: isAdminRole(s.roles),
+  };
+}
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const login = useCallback(async (email: string, password: string) => {
+    const { data: tokens } = await api.post<{ accessToken: string; refreshToken: string; expiresIn: number }>(
+      "/identity/login",
+      { email: email.trim(), password }
+    );
+    const { data: profile } = await api.get<{
+      id: string;
+      email: string;
+      firstName: string;
+      lastName: string;
+      roles: string[];
+    }>("/identity/me", { headers: { Authorization: `Bearer ${tokens.accessToken}` } });
+
+    const next: Session = {
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      expiresAt: Date.now() + tokens.expiresIn * 1000,
+      userId: profile.id,
+      email: profile.email,
+      firstName: profile.firstName,
+      lastName: profile.lastName,
+      roles: profile.roles ?? [],
+    };
+    setSession(next);
+    return toUser(next);
   }, []);
 
-  const login = useCallback(
-    async (email: string, password: string, defaultRole = "Customer"): Promise<boolean> => {
-      setLoading(true);
-      setError(null);
-      try {
-        const response = await api.post("/identity/login", {
-          email,
-          password,
-        });
-
-        const token = response.data?.accessToken;
-        if (!token) {
-          throw new Error("No access token received from authentication service.");
-        }
-
-        let role = defaultRole;
-        let firstName = "";
-        let lastName = "";
-
-        // Attempt to fetch profile to resolve exact roles and names
-        try {
-          const profileRes = await api.get("/identity/me", {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          if (profileRes.data?.roles && profileRes.data.roles.length > 0) {
-            role = profileRes.data.roles[0];
-          }
-          firstName = profileRes.data?.firstName || "";
-          lastName = profileRes.data?.lastName || "";
-        } catch {
-          // If /identity/me fails, defaultRole is preserved
-          console.warn("Could not fetch user profile details, using default role.");
-        }
-
-        const newUser: User = {
-          email,
-          role,
-          token,
-          firstName,
-          lastName,
-        };
-
-        setUser(newUser);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(newUser));
-        localStorage.setItem("token", token);
-        return true;
-      } catch (err: any) {
-        const msg =
-          err?.response?.data?.detail ||
-          err?.response?.data?.title ||
-          err?.message ||
-          "Authentication failed. Please verify credentials.";
-        setError(msg);
-        return false;
-      } finally {
-        setLoading(false);
-      }
+  const register = useCallback(
+    async (input: RegisterInput) => {
+      await api.post("/identity/register", {
+        firstName: input.firstName.trim(),
+        lastName: input.lastName.trim(),
+        email: input.email.trim(),
+        password: input.password,
+      });
+      return login(input.email, input.password);
     },
-    []
+    [login]
   );
-
-  const loginAsCustomer = useCallback(() => {
-    return login("customer@shopsphere.local", "SecurePassword123!", "Customer");
-  }, [login]);
-
-  const loginAsAdmin = useCallback(() => {
-    return login("admin@shopsphere.local", "AdminPassword123!", "Admin");
-  }, [login]);
 
   const logout = useCallback(() => {
-    setUser(null);
-    setError(null);
-    try {
-      localStorage.removeItem(STORAGE_KEY);
-      localStorage.removeItem("token");
-    } catch (err) {
-      console.error("Failed to clear local storage:", err);
+    const refreshToken = getSession()?.refreshToken;
+    if (refreshToken) {
+      api.post("/identity/revoke", { refreshToken }).catch(() => undefined);
     }
+    setSession(null);
   }, []);
 
-  const clearError = useCallback(() => {
-    setError(null);
-  }, []);
+  const actions = useMemo<AuthActions>(() => ({ login, register, logout }), [login, register, logout]);
 
-  return (
-    <AuthContext.Provider
-      value={{
-        user,
-        loading,
-        error,
-        login,
-        loginAsCustomer,
-        loginAsAdmin,
-        logout,
-        clearError,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
-  );
-};
+  return <AuthContext.Provider value={actions}>{children}</AuthContext.Provider>;
+}
 
-export const useAuth = (): AuthContextType => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error("useAuth must be used within an AuthProvider");
-  }
-  return context;
-};
-
+export function useAuth(): AuthContextValue {
+  const actions = useContext(AuthContext);
+  if (!actions) throw new Error("useAuth must be used within an AuthProvider");
+  const session = useSyncExternalStore(subscribeSession, getSession, getServerSession);
+  const ready = useSyncExternalStore(noopSubscribe, () => true, () => false);
+  const user = useMemo(() => (session ? toUser(session) : null), [session]);
+  return { ...actions, user, ready };
+}
