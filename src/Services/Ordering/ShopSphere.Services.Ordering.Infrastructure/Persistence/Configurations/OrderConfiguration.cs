@@ -33,6 +33,9 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
 
         builder.Property(o => o.UpdatedAtUtc);
 
+        builder.Property(o => o.CancellationReason)
+            .HasMaxLength(500);
+
         builder.OwnsOne(o => o.ShippingAddress, address =>
         {
             address.Property(a => a.Street)

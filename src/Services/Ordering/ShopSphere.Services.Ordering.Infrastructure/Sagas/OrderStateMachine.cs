@@ -2,14 +2,32 @@ using MassTransit;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ShopSphere.EventBus.Events;
+using ShopSphere.Services.Ordering.Domain.Entities;
+using ShopSphere.Services.Ordering.Domain.Enums;
 using ShopSphere.Services.Ordering.Infrastructure.Persistence;
 
 namespace ShopSphere.Services.Ordering.Infrastructure.Sagas;
 
+/// <summary>
+/// Checkout saga (orchestrator).
+///
+///   Initial ──OrderCreated──▶ AwaitingInventory ──InventoryReserved──▶ AwaitingPayment ──PaymentProcessed──▶ Completed
+///                                   │                                        │
+///                                   │ InventoryReservationFailed             │ PaymentFailed / OrderCancelled
+///                                   ▼                                        ▼
+///                               Cancelled ◀──────InventoryReleased────── Compensating
+///
+/// The Orders aggregate is updated at every step: Pending → StockReserved → Completed, or → Cancelled
+/// (with a customer-facing CancellationReason). After payment, a CommitInventoryCommand turns the
+/// reservation into a permanent stock deduction.
+/// </summary>
 public class OrderStateMachine : MassTransitStateMachine<OrderStateData>
 {
+    public const string DefaultPaymentMethod = "card";
+
     public State AwaitingInventory { get; private set; } = null!;
     public State AwaitingPayment { get; private set; } = null!;
+    public State Compensating { get; private set; } = null!;
     public State Completed { get; private set; } = null!;
     public State Cancelled { get; private set; } = null!;
 
@@ -19,180 +37,171 @@ public class OrderStateMachine : MassTransitStateMachine<OrderStateData>
     public Event<StockReservedEvent> StockReservedLegacy { get; private set; } = null!;
     public Event<InventoryReservationFailedIntegrationEvent> InventoryReservationFailed { get; private set; } = null!;
     public Event<StockReservationFailedEvent> StockReservationFailedLegacy { get; private set; } = null!;
+    public Event<InventoryReleasedIntegrationEvent> InventoryReleased { get; private set; } = null!;
     public Event<PaymentProcessedIntegrationEvent> PaymentProcessed { get; private set; } = null!;
     public Event<PaymentCompletedEvent> PaymentCompletedLegacy { get; private set; } = null!;
     public Event<PaymentFailedIntegrationEvent> PaymentFailed { get; private set; } = null!;
     public Event<PaymentFailedEvent> PaymentFailedLegacy { get; private set; } = null!;
+    public Event<OrderCancelledIntegrationEvent> OrderCancelled { get; private set; } = null!;
 
     public OrderStateMachine(ILogger<OrderStateMachine> logger)
     {
         InstanceState(x => x.CurrentState);
 
-        Event(() => OrderCreated, x => x
-            .CorrelateById(m => m.Message.OrderId)
-            .SelectId(m => m.Message.OrderId));
+        Event(() => OrderCreated, x => x.CorrelateById(m => m.Message.OrderId).SelectId(m => m.Message.OrderId));
+        Event(() => OrderCreatedApp, x => x.CorrelateById(m => m.Message.OrderId).SelectId(m => m.Message.OrderId));
 
-        Event(() => OrderCreatedApp, x => x
-            .CorrelateById(m => m.Message.OrderId)
-            .SelectId(m => m.Message.OrderId));
+        // Events for unknown orders (e.g. legacy/foreign messages) are dropped instead of faulting.
+        Event(() => InventoryReserved, x => { x.CorrelateById(m => m.Message.OrderId); x.OnMissingInstance(m => m.Discard()); });
+        Event(() => StockReservedLegacy, x => { x.CorrelateById(m => m.Message.OrderId); x.OnMissingInstance(m => m.Discard()); });
+        Event(() => InventoryReservationFailed, x => { x.CorrelateById(m => m.Message.OrderId); x.OnMissingInstance(m => m.Discard()); });
+        Event(() => StockReservationFailedLegacy, x => { x.CorrelateById(m => m.Message.OrderId); x.OnMissingInstance(m => m.Discard()); });
+        Event(() => InventoryReleased, x => { x.CorrelateById(m => m.Message.OrderId); x.OnMissingInstance(m => m.Discard()); });
+        Event(() => PaymentProcessed, x => { x.CorrelateById(m => m.Message.OrderId); x.OnMissingInstance(m => m.Discard()); });
+        Event(() => PaymentCompletedLegacy, x => { x.CorrelateById(m => m.Message.OrderId); x.OnMissingInstance(m => m.Discard()); });
+        Event(() => PaymentFailed, x => { x.CorrelateById(m => m.Message.OrderId); x.OnMissingInstance(m => m.Discard()); });
+        Event(() => PaymentFailedLegacy, x => { x.CorrelateById(m => m.Message.OrderId); x.OnMissingInstance(m => m.Discard()); });
+        Event(() => OrderCancelled, x => { x.CorrelateById(m => m.Message.OrderId); x.OnMissingInstance(m => m.Discard()); });
 
-        Event(() => InventoryReserved, x => x.CorrelateById(m => m.Message.OrderId));
-        Event(() => StockReservedLegacy, x => x.CorrelateById(m => m.Message.OrderId));
-
-        Event(() => InventoryReservationFailed, x => x.CorrelateById(m => m.Message.OrderId));
-        Event(() => StockReservationFailedLegacy, x => x.CorrelateById(m => m.Message.OrderId));
-
-        Event(() => PaymentProcessed, x => x.CorrelateById(m => m.Message.OrderId));
-        Event(() => PaymentCompletedLegacy, x => x.CorrelateById(m => m.Message.OrderId));
-
-        Event(() => PaymentFailed, x => x.CorrelateById(m => m.Message.OrderId));
-        Event(() => PaymentFailedLegacy, x => x.CorrelateById(m => m.Message.OrderId));
-
+        // ── Submitted ──────────────────────────────────────────────────────────────
         Initially(
             When(OrderCreated)
-                .Then(context =>
+                .Then(ctx =>
                 {
-                    logger.LogInformation("OrderCheckoutSaga [{OrderId}] - OrderCreatedIntegrationEvent received. Transitioning to AwaitingInventory.", context.Message.OrderId);
-                    InitializeSaga(context.Saga, context.Message.OrderId, context.Message.CustomerId, context.Message.TotalAmount, context.Message.Items, context.Message.CreatedAtUtc);
+                    logger.LogInformation("Saga[{OrderId}] OrderCreated → AwaitingInventory (reserve stock).", ctx.Message.OrderId);
+                    InitializeSaga(ctx.Saga, ctx.Message.OrderId, ctx.Message.CustomerId, ctx.Message.TotalAmount,
+                        ctx.Message.Items, ctx.Message.CreatedAtUtc, ctx.Message.PaymentMethod);
                 })
-                .Publish(context => new ReserveInventoryCommand(
-                    context.Saga.OrderId,
-                    context.Saga.Items,
-                    DateTimeOffset.UtcNow))
+                .Publish(ctx => new ReserveInventoryCommand(ctx.Saga.OrderId, ctx.Saga.Items, DateTimeOffset.UtcNow))
                 .TransitionTo(AwaitingInventory),
 
             When(OrderCreatedApp)
-                .Then(context =>
+                .Then(ctx =>
                 {
-                    logger.LogInformation("OrderCheckoutSaga [{OrderId}] - OrderCreatedIntegrationEvent (App) received. Transitioning to AwaitingInventory.", context.Message.OrderId);
-                    var items = context.Message.Items?
+                    logger.LogInformation("Saga[{OrderId}] OrderCreated → AwaitingInventory (reserve stock).", ctx.Message.OrderId);
+                    var items = ctx.Message.Items?
                         .Select(i => new OrderItemDto(i.ProductId, i.ProductName, i.UnitPrice, i.Quantity, i.TotalPrice))
                         .ToList();
-                    InitializeSaga(context.Saga, context.Message.OrderId, context.Message.CustomerId, context.Message.TotalAmount, items, context.Message.CreatedAtUtc);
+                    InitializeSaga(ctx.Saga, ctx.Message.OrderId, ctx.Message.CustomerId, ctx.Message.TotalAmount,
+                        items, ctx.Message.CreatedAtUtc, ctx.Message.PaymentMethod);
                 })
-                .Publish(context => new ReserveInventoryCommand(
-                    context.Saga.OrderId,
-                    context.Saga.Items,
-                    DateTimeOffset.UtcNow))
+                .Publish(ctx => new ReserveInventoryCommand(ctx.Saga.OrderId, ctx.Saga.Items, DateTimeOffset.UtcNow))
                 .TransitionTo(AwaitingInventory)
         );
 
+        // ── AwaitingInventory ─────────────────────────────────────────────────────
         During(AwaitingInventory,
             When(InventoryReserved)
-                .Then(context =>
-                {
-                    logger.LogInformation("OrderCheckoutSaga [{OrderId}] - InventoryReserved received. Transitioning to AwaitingPayment.", context.Message.OrderId);
-                    context.Saga.UpdatedAtUtc = DateTime.UtcNow;
-                })
-                .Publish(context => new ProcessPaymentCommand(
-                    context.Saga.OrderId,
-                    Guid.TryParse(context.Saga.CustomerId, out var cId) ? cId : Guid.NewGuid(),
-                    context.Saga.TotalAmount,
-                    DateTimeOffset.UtcNow))
+                .ThenAsync(ctx => OnStockReserved(ctx, logger))
+                .Publish(ctx => BuildPaymentCommand(ctx.Saga))
                 .TransitionTo(AwaitingPayment),
 
             When(StockReservedLegacy)
-                .Then(context =>
-                {
-                    logger.LogInformation("OrderCheckoutSaga [{OrderId}] - StockReservedEvent (Legacy) received. Transitioning to AwaitingPayment.", context.Message.OrderId);
-                    context.Saga.UpdatedAtUtc = DateTime.UtcNow;
-                })
-                .Publish(context => new ProcessPaymentCommand(
-                    context.Saga.OrderId,
-                    context.Message.CustomerId,
-                    context.Saga.TotalAmount,
-                    DateTimeOffset.UtcNow))
+                .ThenAsync(ctx => OnStockReserved(ctx, logger))
+                .Publish(ctx => BuildPaymentCommand(ctx.Saga))
                 .TransitionTo(AwaitingPayment),
 
             When(InventoryReservationFailed)
-                .Then(context =>
-                {
-                    logger.LogWarning("OrderCheckoutSaga [{OrderId}] - InventoryReservationFailed: {Reason}. Cancelling order.", context.Message.OrderId, context.Message.Reason);
-                    context.Saga.FailureReason = context.Message.Reason;
-                    context.Saga.UpdatedAtUtc = DateTime.UtcNow;
-                })
-                .ThenAsync(async context =>
-                {
-                    await CancelOrderInDatabase(context);
-                })
+                .ThenAsync(ctx => FailWithoutReservation(ctx, logger, ctx.Message.Reason))
                 .TransitionTo(Cancelled),
 
             When(StockReservationFailedLegacy)
-                .Then(context =>
-                {
-                    logger.LogWarning("OrderCheckoutSaga [{OrderId}] - StockReservationFailedEvent (Legacy): {Reason}. Cancelling order.", context.Message.OrderId, context.Message.Reason);
-                    context.Saga.FailureReason = context.Message.Reason;
-                    context.Saga.UpdatedAtUtc = DateTime.UtcNow;
-                })
-                .ThenAsync(async context =>
-                {
-                    await CancelOrderInDatabase(context);
-                })
-                .TransitionTo(Cancelled)
+                .ThenAsync(ctx => FailWithoutReservation(ctx, logger, ctx.Message.Reason))
+                .TransitionTo(Cancelled),
+
+            // Cancelled before stock was confirmed: release defensively (idempotent) in case a
+            // reservation is in flight, then finish once Inventory acknowledges.
+            When(OrderCancelled)
+                .Then(ctx => Fail(ctx.Saga, ctx.Message.Reason))
+                .Publish(ctx => new ReleaseInventoryCommand(ctx.Saga.OrderId, ctx.Saga.Items, ctx.Saga.FailureReason!, DateTimeOffset.UtcNow))
+                .TransitionTo(Compensating),
+
+            Ignore(PaymentProcessed), Ignore(PaymentCompletedLegacy), Ignore(PaymentFailed), Ignore(PaymentFailedLegacy),
+            Ignore(InventoryReleased)
         );
 
+        // ── AwaitingPayment ───────────────────────────────────────────────────────
         During(AwaitingPayment,
             When(PaymentProcessed)
-                .Then(context =>
-                {
-                    logger.LogInformation("OrderCheckoutSaga [{OrderId}] - PaymentProcessed received. Completing order.", context.Message.OrderId);
-                    context.Saga.UpdatedAtUtc = DateTime.UtcNow;
-                })
-                .ThenAsync(async context =>
-                {
-                    await CompleteOrderInDatabase(context);
-                })
+                .ThenAsync(ctx => OnPaid(ctx, logger))
+                .Publish(ctx => new CommitInventoryCommand(ctx.Saga.OrderId, DateTimeOffset.UtcNow))
                 .TransitionTo(Completed),
 
             When(PaymentCompletedLegacy)
-                .Then(context =>
-                {
-                    logger.LogInformation("OrderCheckoutSaga [{OrderId}] - PaymentCompleted (Legacy) received. Completing order.", context.Message.OrderId);
-                    context.Saga.UpdatedAtUtc = DateTime.UtcNow;
-                })
-                .ThenAsync(async context =>
-                {
-                    await CompleteOrderInDatabase(context);
-                })
+                .ThenAsync(ctx => OnPaid(ctx, logger))
+                .Publish(ctx => new CommitInventoryCommand(ctx.Saga.OrderId, DateTimeOffset.UtcNow))
                 .TransitionTo(Completed),
 
             When(PaymentFailed)
-                .Then(context =>
+                .ThenAsync(ctx => BeginCompensation(ctx, logger, PaymentDeclinedReason(ctx.Message.Reason)))
+                .Publish(ctx => new ReleaseInventoryCommand(ctx.Saga.OrderId, ctx.Saga.Items, ctx.Message.Reason, DateTimeOffset.UtcNow))
+                .TransitionTo(Compensating),
+
+            When(PaymentFailedLegacy)
+                .ThenAsync(ctx => BeginCompensation(ctx, logger, PaymentDeclinedReason(ctx.Message.Reason)))
+                .Publish(ctx => new ReleaseInventoryCommand(ctx.Saga.OrderId, ctx.Saga.Items, ctx.Message.Reason, DateTimeOffset.UtcNow))
+                .TransitionTo(Compensating),
+
+            When(OrderCancelled)
+                .Then(ctx => Fail(ctx.Saga, ctx.Message.Reason))
+                .Publish(ctx => new ReleaseInventoryCommand(ctx.Saga.OrderId, ctx.Saga.Items, ctx.Message.Reason, DateTimeOffset.UtcNow))
+                .TransitionTo(Compensating),
+
+            Ignore(InventoryReserved), Ignore(StockReservedLegacy)
+        );
+
+        // ── Compensating ──────────────────────────────────────────────────────────
+        During(Compensating,
+            When(InventoryReleased)
+                .ThenAsync(async ctx =>
                 {
-                    logger.LogWarning("OrderCheckoutSaga [{OrderId}] - PaymentFailed: {Reason}. Compensating inventory reservation and cancelling order.", context.Message.OrderId, context.Message.Reason);
-                    context.Saga.FailureReason = context.Message.Reason;
-                    context.Saga.UpdatedAtUtc = DateTime.UtcNow;
-                })
-                .Publish(context => new ReleaseInventoryCommand(
-                    context.Saga.OrderId,
-                    context.Saga.Items,
-                    context.Message.Reason,
-                    DateTimeOffset.UtcNow))
-                .ThenAsync(async context =>
-                {
-                    await CancelOrderInDatabase(context);
+                    logger.LogInformation("Saga[{OrderId}] InventoryReleased → Cancelled (compensation complete).", ctx.Saga.OrderId);
+                    ctx.Saga.UpdatedAtUtc = DateTime.UtcNow;
+                    await UpdateOrder(ctx, o => { if (o.Status != OrderStatus.Cancelled) o.Cancel(ctx.Saga.FailureReason); });
                 })
                 .TransitionTo(Cancelled),
 
-            When(PaymentFailedLegacy)
-                .Then(context =>
-                {
-                    logger.LogWarning("OrderCheckoutSaga [{OrderId}] - PaymentFailed (Legacy): {Reason}. Compensating inventory reservation and cancelling order.", context.Message.OrderId, context.Message.Reason);
-                    context.Saga.FailureReason = context.Message.Reason;
-                    context.Saga.UpdatedAtUtc = DateTime.UtcNow;
-                })
-                .Publish(context => new ReleaseInventoryCommand(
-                    context.Saga.OrderId,
-                    context.Saga.Items,
-                    context.Message.Reason,
-                    DateTimeOffset.UtcNow))
-                .ThenAsync(async context =>
-                {
-                    await CancelOrderInDatabase(context);
-                })
-                .TransitionTo(Cancelled)
+            // A payment that completes after a cancellation is not reversed automatically here.
+            When(PaymentProcessed)
+                .Then(ctx => logger.LogWarning("Saga[{OrderId}] payment {Txn} completed after cancellation; refund required.",
+                    ctx.Saga.OrderId, ctx.Message.TransactionId)),
+
+            Ignore(PaymentCompletedLegacy), Ignore(PaymentFailed), Ignore(PaymentFailedLegacy), Ignore(OrderCancelled),
+            Ignore(InventoryReserved), Ignore(StockReservedLegacy), Ignore(InventoryReservationFailed), Ignore(StockReservationFailedLegacy)
         );
+
+        // ── Terminal states: absorb duplicates / late arrivals ────────────────────
+        During(Completed,
+            Ignore(PaymentProcessed), Ignore(PaymentCompletedLegacy), Ignore(PaymentFailed), Ignore(PaymentFailedLegacy),
+            Ignore(InventoryReserved), Ignore(StockReservedLegacy), Ignore(InventoryReleased), Ignore(OrderCancelled),
+            Ignore(InventoryReservationFailed), Ignore(StockReservationFailedLegacy)
+        );
+
+        During(Cancelled,
+            // A reservation that lands after cancellation must be handed back.
+            When(InventoryReserved)
+                .Publish(ctx => new ReleaseInventoryCommand(ctx.Saga.OrderId, ctx.Saga.Items, "Order already cancelled", DateTimeOffset.UtcNow)),
+            When(StockReservedLegacy)
+                .Publish(ctx => new ReleaseInventoryCommand(ctx.Saga.OrderId, ctx.Saga.Items, "Order already cancelled", DateTimeOffset.UtcNow)),
+            Ignore(PaymentProcessed), Ignore(PaymentCompletedLegacy), Ignore(PaymentFailed), Ignore(PaymentFailedLegacy),
+            Ignore(InventoryReleased), Ignore(OrderCancelled), Ignore(InventoryReservationFailed), Ignore(StockReservationFailedLegacy)
+        );
+
+        // Duplicate OrderCreated deliveries after the saga has started are harmless.
+        DuringAny(Ignore(OrderCreated), Ignore(OrderCreatedApp));
     }
+
+    public static string PaymentDeclinedReason(string? reason) =>
+        string.IsNullOrWhiteSpace(reason) ? "Payment declined" : $"Payment declined: {reason}";
+
+    private static ProcessPaymentCommand BuildPaymentCommand(OrderStateData saga) =>
+        new(saga.OrderId,
+            Guid.TryParse(saga.CustomerId, out var customerId) ? customerId : Guid.Empty,
+            saga.TotalAmount,
+            DateTimeOffset.UtcNow)
+        {
+            PaymentMethod = string.IsNullOrWhiteSpace(saga.PaymentMethod) ? DefaultPaymentMethod : saga.PaymentMethod
+        };
 
     private static void InitializeSaga(
         OrderStateData saga,
@@ -200,57 +209,90 @@ public class OrderStateMachine : MassTransitStateMachine<OrderStateData>
         string customerId,
         decimal totalAmount,
         IEnumerable<OrderItemDto>? items,
-        DateTime createdAtUtc)
+        DateTime createdAtUtc,
+        string? paymentMethod)
     {
         saga.OrderId = orderId;
         saga.CustomerId = customerId ?? string.Empty;
         saga.TotalAmount = totalAmount;
         saga.Items = items?.ToList() ?? new List<OrderItemDto>();
+        saga.PaymentMethod = string.IsNullOrWhiteSpace(paymentMethod) ? null : paymentMethod;
         saga.CreatedAtUtc = createdAtUtc;
         saga.UpdatedAtUtc = DateTime.UtcNow;
     }
 
-    private static OrderingDbContext? GetDbContext(BehaviorContext<OrderStateData> context)
+    private static void Fail(OrderStateData saga, string? reason)
     {
-        if (context.TryGetPayload<OrderingDbContext>(out var ctx))
-            return ctx;
+        saga.FailureReason = string.IsNullOrWhiteSpace(reason) ? "Order cancelled" : reason;
+        saga.UpdatedAtUtc = DateTime.UtcNow;
+    }
+
+    private static async Task OnStockReserved<T>(BehaviorContext<OrderStateData, T> ctx, ILogger logger) where T : class
+    {
+        logger.LogInformation("Saga[{OrderId}] InventoryReserved → AwaitingPayment (charge {Amount}).", ctx.Saga.OrderId, ctx.Saga.TotalAmount);
+        ctx.Saga.UpdatedAtUtc = DateTime.UtcNow;
+        await UpdateOrder(ctx, o => { if (o.Status == OrderStatus.Pending) o.MarkStockReserved(); });
+    }
+
+    private static async Task OnPaid<T>(BehaviorContext<OrderStateData, T> ctx, ILogger logger) where T : class
+    {
+        logger.LogInformation("Saga[{OrderId}] PaymentProcessed → Completed (commit stock).", ctx.Saga.OrderId);
+        ctx.Saga.UpdatedAtUtc = DateTime.UtcNow;
+        await UpdateOrder(ctx, o =>
+        {
+            if (o.Status == OrderStatus.Cancelled) return;
+            o.MarkPaid();
+            o.MarkCompleted();
+        });
+    }
+
+    private static async Task FailWithoutReservation<T>(BehaviorContext<OrderStateData, T> ctx, ILogger logger, string reason) where T : class
+    {
+        logger.LogWarning("Saga[{OrderId}] InventoryReservationFailed ({Reason}) → Cancelled.", ctx.Saga.OrderId, reason);
+        Fail(ctx.Saga, string.IsNullOrWhiteSpace(reason) ? "Out of stock" : $"Out of stock: {reason}");
+        await UpdateOrder(ctx, o => { if (o.Status != OrderStatus.Cancelled) o.Cancel(ctx.Saga.FailureReason); });
+    }
+
+    private static async Task BeginCompensation<T>(BehaviorContext<OrderStateData, T> ctx, ILogger logger, string reason) where T : class
+    {
+        logger.LogWarning("Saga[{OrderId}] {Reason} → Compensating (release stock).", ctx.Saga.OrderId, reason);
+        Fail(ctx.Saga, reason);
+        // The customer-facing order is cancelled immediately; the saga finishes once stock is released.
+        await UpdateOrder(ctx, o => { if (o.Status != OrderStatus.Cancelled) o.Cancel(reason); });
+    }
+
+    private static OrderingDbContext? ResolveDbContext(BehaviorContext<OrderStateData> context)
+    {
+        if (context.TryGetPayload<OrderingDbContext>(out var direct))
+            return direct;
         if (context.TryGetPayload<IServiceProvider>(out var sp))
             return sp.GetService<OrderingDbContext>();
-        if (context.TryGetPayload<ConsumeContext>(out var cc))
+        try
         {
-            if (cc.TryGetPayload<OrderingDbContext>(out var ccDb))
-                return ccDb;
-            if (cc.TryGetPayload<IServiceProvider>(out var ccSp))
-                return ccSp.GetService<OrderingDbContext>();
+            return context.GetServiceOrCreateInstance<OrderingDbContext>();
         }
-        return null;
-    }
-
-    private static async Task CompleteOrderInDatabase(BehaviorContext<OrderStateData> context)
-    {
-        var db = GetDbContext(context);
-        if (db != null)
+        catch (Exception)
         {
-            var order = await db.Orders.FindAsync(context.Saga.OrderId);
-            if (order != null)
-            {
-                order.MarkCompleted();
-                await db.SaveChangesAsync();
-            }
+            return null;
         }
     }
 
-    private static async Task CancelOrderInDatabase(BehaviorContext<OrderStateData> context)
+    /// <summary>Loads the Order aggregate, applies a transition, and persists it.</summary>
+    private static async Task UpdateOrder(BehaviorContext<OrderStateData> context, Action<Order> apply)
     {
-        var db = GetDbContext(context);
-        if (db != null)
+        var db = ResolveDbContext(context);
+        if (db is null)
         {
-            var order = await db.Orders.FindAsync(context.Saga.OrderId);
-            if (order != null)
-            {
-                order.Cancel();
-                await db.SaveChangesAsync();
-            }
+            throw new InvalidOperationException("OrderingDbContext is not available in the saga scope.");
         }
+
+        var order = await db.Orders.FindAsync(new object[] { context.Saga.OrderId }, context.CancellationToken);
+        if (order is null)
+        {
+            return;
+        }
+
+        apply(order);
+        await db.SaveChangesAsync(context.CancellationToken);
     }
 }

@@ -60,6 +60,7 @@ public class GetOrderByIdQueryHandler : IRequestHandler<GetOrderByIdQuery, Order
         order.TotalAmount,
         order.Status.ToString(),
         order.CreatedAtUtc,
-        order.UpdatedAtUtc);
+        order.UpdatedAtUtc,
+        order.CancellationReason);
 }
 

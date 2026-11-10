@@ -16,7 +16,8 @@ public record CreateOrderRequest(
     AddressDto ShippingAddress,
     List<CreateOrderItemDto> Items,
     string? CustomerId = null,
-    string? CustomerEmail = null
+    string? CustomerEmail = null,
+    string? PaymentMethod = null
 );
 
 public class OrderEndpoints : ICarterModule
@@ -52,7 +53,8 @@ public class OrderEndpoints : ICarterModule
                 customerId,
                 customerEmail,
                 request.ShippingAddress,
-                request.Items ?? new List<CreateOrderItemDto>());
+                request.Items ?? new List<CreateOrderItemDto>(),
+                request.PaymentMethod);
 
             var validationResult = await validator.ValidateAsync(command, cancellationToken);
             if (!validationResult.IsValid)

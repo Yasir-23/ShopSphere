@@ -13,6 +13,15 @@ public class LivePostgreSqlInventoryWebApplicationFactory : WebApplicationFactor
         builder.UseEnvironment("Development");
         builder.ConfigureTestServices(services =>
         {
+
+            // The Inventory service now hosts MassTransit consumers; keep tests broker-free.
+            foreach (var hosted in services
+                .Where(d => d.ServiceType == typeof(Microsoft.Extensions.Hosting.IHostedService) &&
+                            d.ImplementationType?.FullName?.Contains("MassTransit") == true)
+                .ToList())
+            {
+                services.Remove(hosted);
+            }
             services.AddTestResponseBodyFeatureWorkaround();
         });
     }

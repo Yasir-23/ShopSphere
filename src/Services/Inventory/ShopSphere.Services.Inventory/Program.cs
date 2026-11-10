@@ -1,22 +1,25 @@
 using Carter;
 using FluentValidation;
+using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
 using Serilog;
 using ShopSphere.Common.Logging;
 using ShopSphere.Common.Logging.HealthChecks;
 using ShopSphere.Common.Security;
+using ShopSphere.EventBus;
+using ShopSphere.Services.Inventory.Consumers;
 using ShopSphere.Services.Inventory.Data;
 using ShopSphere.Services.Inventory.Services;
 using ShopSphere.Services.Inventory.Validators;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Explicitly bind Kestrel to Port 5030 for Inventory Service
-builder.WebHost.ConfigureKestrel(options =>
+// Default to port 5030 for local runs, but honour ASPNETCORE_URLS / --urls (containers bind :8080).
+if (string.IsNullOrWhiteSpace(builder.Configuration["urls"]) && string.IsNullOrWhiteSpace(builder.Configuration["ASPNETCORE_URLS"]))
 {
-    options.ListenLocalhost(5030);
-});
+    builder.WebHost.UseUrls("http://localhost:5030");
+}
 
 // 1. Serilog Structured Logging & OpenTelemetry Distributed Tracing
 builder.Services.AddShopSphereLogging(builder.Configuration, "ShopSphere.Services.Inventory");
@@ -32,6 +35,15 @@ builder.Services.AddDbContext<InventoryDbContext>(options =>
 
 // 3. Application Domain Services
 builder.Services.AddScoped<IInventoryService, InventoryService>();
+
+// 3b. MassTransit / RabbitMQ: checkout saga participants (reserve, release, commit stock)
+builder.Services.AddShopSphereEventBus(builder.Configuration, bus =>
+{
+    bus.SetKebabCaseEndpointNameFormatter();
+    bus.AddConsumer<ReserveInventoryConsumer>();
+    bus.AddConsumer<ReleaseInventoryConsumer>();
+    bus.AddConsumer<CommitInventoryConsumer>();
+});
 
 // 4. JWT Authentication & Role Authorization Security
 builder.Services.AddShopSphereSecurity(builder.Configuration);

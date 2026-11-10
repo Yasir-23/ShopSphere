@@ -57,6 +57,7 @@ public class GetOrdersByCustomerQueryHandler : IRequestHandler<GetOrdersByCustom
         order.TotalAmount,
         order.Status.ToString(),
         order.CreatedAtUtc,
-        order.UpdatedAtUtc);
+        order.UpdatedAtUtc,
+        order.CancellationReason);
 }
 

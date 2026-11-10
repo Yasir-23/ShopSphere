@@ -11,6 +11,7 @@
     <ProjectReference Include="..\..\..\BuildingBlocks\ShopSphere.Common.Logging\ShopSphere.Common.Logging.csproj" />
     <ProjectReference Include="..\..\..\BuildingBlocks\ShopSphere.Common.Security\ShopSphere.Common.Security.csproj" />
     <ProjectReference Include="..\..\..\BuildingBlocks\ShopSphere.Common.Resilience\ShopSphere.Common.Resilience.csproj" />
+    <ProjectReference Include="..\..\..\BuildingBlocks\ShopSphere.EventBus\ShopSphere.EventBus.csproj" />
   </ItemGroup>
 
   <ItemGroup>

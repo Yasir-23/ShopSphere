@@ -17,6 +17,7 @@ public class Order
     public OrderStatus Status { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime? UpdatedAtUtc { get; private set; }
+    public string? CancellationReason { get; private set; }
 
     private Order()
     {
@@ -70,7 +71,7 @@ public class Order
         TotalAmount = _items.Sum(i => i.TotalPrice);
     }
 
-    public void Cancel()
+    public void Cancel(string? reason = null)
     {
         if (Status == OrderStatus.Paid || Status == OrderStatus.Completed)
         {
@@ -78,6 +79,10 @@ public class Order
         }
 
         Status = OrderStatus.Cancelled;
+        if (!string.IsNullOrWhiteSpace(reason))
+        {
+            CancellationReason = reason.Length > 500 ? reason[..500] : reason;
+        }
         UpdatedAtUtc = DateTime.UtcNow;
     }
 

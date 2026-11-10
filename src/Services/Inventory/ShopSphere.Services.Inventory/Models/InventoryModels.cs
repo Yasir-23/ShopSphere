@@ -125,3 +125,22 @@ public record AdjustStockRequest(
     int Quantity,
     string? Reason = null);
 
+
+public record CreateStockItemRequest(
+    string ProductId,
+    string Sku,
+    int Quantity,
+    int? RestockThreshold = null);
+
+public record StockItemCreationResult(bool IsCreated, InventoryStockResponse? Stock, string? ErrorMessage)
+{
+    public static StockItemCreationResult Created(InventoryStockResponse stock) => new(true, stock, null);
+    public static StockItemCreationResult Conflict(string message) => new(false, null, message);
+}
+
+public enum StockItemDeletionResult
+{
+    Deleted,
+    NotFound,
+    HasOpenReservations
+}

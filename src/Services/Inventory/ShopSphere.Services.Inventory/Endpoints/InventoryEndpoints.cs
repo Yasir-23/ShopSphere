@@ -149,7 +149,19 @@ public class InventoryEndpoints : ICarterModule
                 return Results.ValidationProblem(validationResult.ToDictionary());
             }
 
-            var stock = await inventoryService.AdjustStockAsync(request, cancellationToken);
+            InventoryStockResponse? stock;
+            try
+            {
+                stock = await inventoryService.AdjustStockAsync(request, cancellationToken);
+            }
+            catch (InsufficientStockForAdjustmentException ex)
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status409Conflict,
+                    title: "Insufficient Stock",
+                    detail: ex.Message);
+            }
+
             if (stock is null)
             {
                 return Results.Problem(
@@ -166,7 +178,8 @@ public class InventoryEndpoints : ICarterModule
         .ProducesValidationProblem(StatusCodes.Status400BadRequest)
         .ProducesProblem(StatusCodes.Status401Unauthorized)
         .ProducesProblem(StatusCodes.Status403Forbidden)
-        .ProducesProblem(StatusCodes.Status404NotFound);
+        .ProducesProblem(StatusCodes.Status404NotFound)
+        .ProducesProblem(StatusCodes.Status409Conflict);
 
         // 6. Restock Inventory (API_SPEC 6.2 Alias for AdjustStock)
         group.MapPost("/restock", async (
@@ -179,6 +192,14 @@ public class InventoryEndpoints : ICarterModule
             if (!validationResult.IsValid)
             {
                 return Results.ValidationProblem(validationResult.ToDictionary());
+            }
+
+            if (request.Quantity <= 0)
+            {
+                return Results.ValidationProblem(new Dictionary<string, string[]>
+                {
+                    ["quantity"] = new[] { "Restock quantity must be greater than zero. Use /adjust to remove stock." }
+                });
             }
 
             var stock = await inventoryService.AdjustStockAsync(request, cancellationToken);
@@ -199,6 +220,65 @@ public class InventoryEndpoints : ICarterModule
         .ProducesProblem(StatusCodes.Status401Unauthorized)
         .ProducesProblem(StatusCodes.Status403Forbidden)
         .ProducesProblem(StatusCodes.Status404NotFound);
+
+        // 7. Provision a stock record for a newly created catalog product (Admin)
+        group.MapPost("/items", async (
+            [FromBody] CreateStockItemRequest request,
+            IValidator<CreateStockItemRequest> validator,
+            IInventoryService inventoryService,
+            CancellationToken cancellationToken) =>
+        {
+            var validationResult = await validator.ValidateAsync(request, cancellationToken);
+            if (!validationResult.IsValid)
+            {
+                return Results.ValidationProblem(validationResult.ToDictionary());
+            }
+
+            var result = await inventoryService.CreateStockItemAsync(request, cancellationToken);
+            if (!result.IsCreated)
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status409Conflict,
+                    title: "Stock Record Exists",
+                    detail: result.ErrorMessage);
+            }
+
+            return Results.Created($"/api/v1/inventory/{result.Stock!.ProductId}", result.Stock);
+        })
+        .WithName("CreateStockItem")
+        .RequireAuthorization(new AuthorizeAttribute { Roles = "Administrator,Admin" })
+        .Produces<InventoryStockResponse>(StatusCodes.Status201Created)
+        .ProducesValidationProblem(StatusCodes.Status400BadRequest)
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status403Forbidden)
+        .ProducesProblem(StatusCodes.Status409Conflict);
+
+        // 8. Remove a stock record (Admin), e.g. after the catalog product is deleted
+        group.MapDelete("/items/{productIdOrSku}", async (
+            string productIdOrSku,
+            IInventoryService inventoryService,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await inventoryService.DeleteStockItemAsync(productIdOrSku, cancellationToken);
+            return result switch
+            {
+                StockItemDeletionResult.Deleted => Results.NoContent(),
+                StockItemDeletionResult.NotFound => Results.Problem(
+                    statusCode: StatusCodes.Status404NotFound,
+                    title: "Stock Not Found",
+                    detail: $"No inventory item found for identifier '{productIdOrSku}'."),
+                _ => Results.Problem(
+                    statusCode: StatusCodes.Status409Conflict,
+                    title: "Open Reservations",
+                    detail: "This stock record has stock reserved for open orders and cannot be removed yet.")
+            };
+        })
+        .WithName("DeleteStockItem")
+        .RequireAuthorization(new AuthorizeAttribute { Roles = "Administrator,Admin" })
+        .Produces(StatusCodes.Status204NoContent)
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status403Forbidden)
+        .ProducesProblem(StatusCodes.Status404NotFound)
+        .ProducesProblem(StatusCodes.Status409Conflict);
     }
 }
-

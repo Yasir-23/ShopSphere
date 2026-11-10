@@ -114,6 +114,9 @@ public class CheckoutSagaE2ETests
             sagaInstance = sagaHarness.Created.ContainsInState(orderId, sagaHarness.StateMachine, sagaHarness.StateMachine.Completed);
             sagaInstance.Should().NotBeNull();
 
+            // Reserved stock is turned into a permanent deduction
+            (await harness.Published.Any<CommitInventoryCommand>(c => c.Context.Message.OrderId == orderId)).Should().BeTrue();
+
             // Assert: Order in DB is marked Completed
             await using var assertScope = provider.CreateAsyncScope();
             var assertDb = assertScope.ServiceProvider.GetRequiredService<OrderingDbContext>();
@@ -182,11 +185,30 @@ public class CheckoutSagaE2ETests
                 c.Context.Message.OrderId == orderId &&
                 c.Context.Message.Reason == "Credit limit exceeded")).Should().BeTrue();
 
-            // Verify Saga transitioned to Cancelled
+            // Saga waits in Compensating until Inventory confirms the release
+            sagaHarness.Created.ContainsInState(orderId, sagaHarness.StateMachine, sagaHarness.StateMachine.Compensating)
+                .Should().NotBeNull();
+
+            // The customer-facing order is cancelled immediately, with the decline reason
+            await using (var midScope = provider.CreateAsyncScope())
+            {
+                var midDb = midScope.ServiceProvider.GetRequiredService<OrderingDbContext>();
+                var midOrder = await midDb.Orders.FindAsync(orderId);
+                midOrder!.Status.Should().Be(OrderStatus.Cancelled);
+                midOrder.CancellationReason.Should().Be("Payment declined: Credit limit exceeded");
+            }
+
+            // Step 4: Inventory confirms release -> Cancelled
+            await harness.Bus.Publish(new InventoryReleasedIntegrationEvent(orderId, DateTime.UtcNow));
+            (await sagaHarness.Consumed.Any<InventoryReleasedIntegrationEvent>()).Should().BeTrue();
+
             var cancelledSaga = sagaHarness.Created.ContainsInState(orderId, sagaHarness.StateMachine, sagaHarness.StateMachine.Cancelled);
             cancelledSaga.Should().NotBeNull();
 
-            // Verify Order status in DB is Cancelled
+            // A late duplicate payment event is absorbed, not faulted
+            await harness.Bus.Publish(new PaymentFailedIntegrationEvent(orderId, "Credit limit exceeded", DateTime.UtcNow));
+            (await harness.Published.SelectAsync<Fault<PaymentFailedIntegrationEvent>>().Any()).Should().BeFalse();
+
             await using var assertScope = provider.CreateAsyncScope();
             var assertDb = assertScope.ServiceProvider.GetRequiredService<OrderingDbContext>();
             var dbOrder = await assertDb.Orders.FindAsync(orderId);
@@ -249,6 +271,57 @@ public class CheckoutSagaE2ETests
             var dbOrder = await assertDb.Orders.FindAsync(orderId);
             dbOrder.Should().NotBeNull();
             dbOrder!.Status.Should().Be(OrderStatus.Cancelled);
+            dbOrder.CancellationReason.Should().Be("Out of stock: Insufficient stock in warehouse");
+        }
+        finally
+        {
+            await harness.Stop();
+        }
+    }
+
+    [Fact]
+    public async Task CustomerCancellation_WhileAwaitingPayment_ReleasesInventoryAndEndsCancelled()
+    {
+        var (provider, harness, sagaHarness, _) = CreateTestHarnessEnvironment();
+        await using var serviceScope = provider.CreateAsyncScope();
+        var db = serviceScope.ServiceProvider.GetRequiredService<OrderingDbContext>();
+
+        var orderId = Guid.NewGuid();
+        var customerId = Guid.NewGuid().ToString();
+        var items = new List<OrderItemDto> { new("PROD-200", "Desk Lamp", 40.00m, 2, 80.00m) };
+
+        var order = Order.Create(customerId, "lamp@example.com", new Address("1 Way", "Town", "TX", "75001", "USA"),
+            items.Select(i => (i.ProductId, i.ProductName, i.UnitPrice, i.Quantity)));
+        typeof(Order).GetProperty("Id")!.SetValue(order, orderId);
+        db.Orders.Add(order);
+        await db.SaveChangesAsync();
+
+        await harness.Start();
+        try
+        {
+            await harness.Bus.Publish(new OrderCreatedIntegrationEvent(orderId, customerId, 80.00m, items, DateTime.UtcNow)
+            {
+                PaymentMethod = "card_visa_4242"
+            });
+            (await sagaHarness.Consumed.Any<OrderCreatedIntegrationEvent>()).Should().BeTrue();
+
+            await harness.Bus.Publish(new InventoryReservedIntegrationEvent(orderId, DateTime.UtcNow));
+            (await sagaHarness.Consumed.Any<InventoryReservedIntegrationEvent>()).Should().BeTrue();
+
+            // The chosen payment method travels with the payment command
+            (await harness.Published.Any<ProcessPaymentCommand>(c =>
+                c.Context.Message.OrderId == orderId && c.Context.Message.PaymentMethod == "card_visa_4242")).Should().BeTrue();
+
+            await harness.Bus.Publish(new OrderCancelledIntegrationEvent(orderId, "Cancelled by customer", DateTime.UtcNow));
+            (await sagaHarness.Consumed.Any<OrderCancelledIntegrationEvent>()).Should().BeTrue();
+            (await harness.Published.Any<ReleaseInventoryCommand>(c => c.Context.Message.OrderId == orderId)).Should().BeTrue();
+            sagaHarness.Created.ContainsInState(orderId, sagaHarness.StateMachine, sagaHarness.StateMachine.Compensating)
+                .Should().NotBeNull();
+
+            await harness.Bus.Publish(new InventoryReleasedIntegrationEvent(orderId, DateTime.UtcNow));
+            (await sagaHarness.Consumed.Any<InventoryReleasedIntegrationEvent>()).Should().BeTrue();
+            sagaHarness.Created.ContainsInState(orderId, sagaHarness.StateMachine, sagaHarness.StateMachine.Cancelled)
+                .Should().NotBeNull();
         }
         finally
         {

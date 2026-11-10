@@ -32,40 +32,22 @@ public class PaymentService : IPaymentService
     {
         _logger.LogInformation("Processing payment for OrderId: {OrderId}", request.OrderId);
 
-        // Check if transaction already exists for this order
-        var transaction = await _dbContext.Transactions
-            .FirstOrDefaultAsync(t => t.OrderId == request.OrderId, cancellationToken);
-
-        if (transaction != null && transaction.Status == PaymentStatus.Completed)
+        var (transaction, existing) = await ClaimTransactionAsync(request, cancellationToken);
+        if (transaction is null)
         {
-            _logger.LogWarning("Payment for OrderId {OrderId} has already been completed (Idempotency conflict).", request.OrderId);
-            return (IsConflict: true, Response: null, Error: $"Payment for OrderId '{request.OrderId}' has already been completed.");
-        }
-
-        if (transaction == null)
-        {
-            transaction = new PaymentTransaction
+            var current = existing!;
+            var message = current.Status switch
             {
-                Id = Guid.NewGuid(),
-                OrderId = request.OrderId,
-                Amount = request.Amount,
-                Currency = request.Currency,
-                PaymentMethod = request.PaymentMethod,
-                Status = PaymentStatus.Processing,
-                CreatedAtUtc = DateTime.UtcNow
+                PaymentStatus.Completed => $"Payment for OrderId '{request.OrderId}' has already been completed.",
+                PaymentStatus.Failed => $"Payment for OrderId '{request.OrderId}' was already declined ({current.FailureReason}). Place a new order to retry.",
+                PaymentStatus.Refunded => $"Payment for OrderId '{request.OrderId}' has been refunded.",
+                _ => $"Payment for OrderId '{request.OrderId}' is already being processed."
             };
-            _dbContext.Transactions.Add(transaction);
-        }
-        else
-        {
-            transaction.Amount = request.Amount;
-            transaction.Currency = request.Currency;
-            transaction.PaymentMethod = request.PaymentMethod;
-            transaction.Status = PaymentStatus.Processing;
-            transaction.UpdatedAtUtc = DateTime.UtcNow;
+            _logger.LogWarning("Payment for OrderId {OrderId} not processed (idempotency): current status {Status}.", request.OrderId, current.Status);
+            return (IsConflict: true, Response: ToResponse(current), Error: message);
         }
 
-        // Delegate to Stripe / Simulator engine
+        // Delegate to Stripe / Simulator engine. Only the request that claimed the transaction gets here.
         var processorResult = await _paymentProcessor.ProcessPaymentAsync(
             request.OrderId,
             request.Amount,
@@ -79,75 +61,124 @@ public class PaymentService : IPaymentService
             transaction.TransactionId = processorResult.TransactionId;
             transaction.FailureReason = null;
             transaction.UpdatedAtUtc = DateTime.UtcNow;
-
             await _dbContext.SaveChangesAsync(cancellationToken);
 
-            // Publish Integration Events to RabbitMQ Bus
             try
             {
-                var processedEvent = new PaymentProcessedIntegrationEvent(
+                await _publishEndpoint.Publish(new PaymentProcessedIntegrationEvent(
                     transaction.Id,
                     transaction.OrderId,
                     transaction.Amount,
                     transaction.TransactionId!,
-                    transaction.UpdatedAtUtc.Value);
-
-                await _publishEndpoint.Publish(processedEvent, cancellationToken);
-
-                // Compatible event for Saga Orchestrator
-                var completedEvent = new PaymentCompletedEvent(
-                    transaction.Id,
-                    transaction.OrderId,
-                    transaction.Amount,
-                    transaction.TransactionId!,
-                    DateTimeOffset.UtcNow);
-
-                await _publishEndpoint.Publish(completedEvent, cancellationToken);
-
+                    transaction.UpdatedAtUtc.Value), cancellationToken);
                 _logger.LogInformation("Published PaymentProcessedIntegrationEvent for OrderId {OrderId}.", request.OrderId);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to publish payment completion events for OrderId {OrderId}.", request.OrderId);
+                _logger.LogError(ex, "Failed to publish payment completion event for OrderId {OrderId}.", request.OrderId);
             }
 
             return (IsConflict: false, Response: ToResponse(transaction), Error: null);
         }
-        else
+
+        transaction.Status = PaymentStatus.Failed;
+        transaction.FailureReason = processorResult.FailureReason ?? "Payment processing failed.";
+        transaction.UpdatedAtUtc = DateTime.UtcNow;
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        try
         {
-            transaction.Status = PaymentStatus.Failed;
-            transaction.FailureReason = processorResult.FailureReason ?? "Payment processing failed.";
-            transaction.UpdatedAtUtc = DateTime.UtcNow;
+            await _publishEndpoint.Publish(new PaymentFailedIntegrationEvent(
+                transaction.OrderId,
+                transaction.FailureReason!,
+                transaction.UpdatedAtUtc.Value), cancellationToken);
+            _logger.LogInformation("Published PaymentFailedIntegrationEvent for OrderId {OrderId}.", request.OrderId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to publish payment failure event for OrderId {OrderId}.", request.OrderId);
+        }
 
-            await _dbContext.SaveChangesAsync(cancellationToken);
+        return (IsConflict: false, Response: ToResponse(transaction), Error: transaction.FailureReason);
+    }
 
-            // Publish PaymentFailedIntegrationEvent
+    /// <summary>
+    /// Ensures exactly one caller processes a payment for an order. The transaction row is created
+    /// if missing (tolerating the unique-index race with OrderCreatedConsumer), then atomically
+    /// moved Pending → Processing. Returns the claimed, tracked transaction, or the current row
+    /// when another request already claimed/finished it.
+    /// </summary>
+    private async Task<(PaymentTransaction? Claimed, PaymentTransaction? Existing)> ClaimTransactionAsync(
+        ProcessPaymentRequest request,
+        CancellationToken cancellationToken)
+    {
+        var existing = await _dbContext.Transactions
+            .FirstOrDefaultAsync(t => t.OrderId == request.OrderId, cancellationToken);
+
+        if (existing is null)
+        {
+            var created = new PaymentTransaction
+            {
+                Id = Guid.NewGuid(),
+                OrderId = request.OrderId,
+                Amount = request.Amount,
+                Currency = request.Currency,
+                PaymentMethod = request.PaymentMethod,
+                Status = PaymentStatus.Processing,
+                CreatedAtUtc = DateTime.UtcNow
+            };
+            _dbContext.Transactions.Add(created);
             try
             {
-                var failedIntegrationEvent = new PaymentFailedIntegrationEvent(
-                    transaction.OrderId,
-                    transaction.FailureReason!,
-                    transaction.UpdatedAtUtc.Value);
-
-                await _publishEndpoint.Publish(failedIntegrationEvent, cancellationToken);
-
-                var failedEvent = new PaymentFailedEvent(
-                    transaction.OrderId,
-                    transaction.FailureReason!,
-                    DateTimeOffset.UtcNow);
-
-                await _publishEndpoint.Publish(failedEvent, cancellationToken);
-
-                _logger.LogInformation("Published PaymentFailedIntegrationEvent for OrderId {OrderId}.", request.OrderId);
+                await _dbContext.SaveChangesAsync(cancellationToken);
+                return (created, null);
             }
-            catch (Exception ex)
+            catch (DbUpdateException ex) when (IsUniqueViolation(ex))
             {
-                _logger.LogError(ex, "Failed to publish payment failure events for OrderId {OrderId}.", request.OrderId);
+                _logger.LogInformation("Transaction for OrderId {OrderId} was created concurrently; claiming the existing row.", request.OrderId);
+                _dbContext.ChangeTracker.Clear();
+                existing = await _dbContext.Transactions
+                    .FirstAsync(t => t.OrderId == request.OrderId, cancellationToken);
             }
-
-            return (IsConflict: false, Response: ToResponse(transaction), Error: transaction.FailureReason);
         }
+
+        if (existing.Status != PaymentStatus.Pending)
+        {
+            return (null, existing);
+        }
+
+        var now = DateTime.UtcNow;
+        int claimed;
+        if (_dbContext.Database.IsRelational())
+        {
+            claimed = await _dbContext.Transactions
+                .Where(t => t.Id == existing.Id && t.Status == PaymentStatus.Pending)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(t => t.Status, PaymentStatus.Processing)
+                    .SetProperty(t => t.Amount, request.Amount)
+                    .SetProperty(t => t.Currency, request.Currency)
+                    .SetProperty(t => t.PaymentMethod, request.PaymentMethod)
+                    .SetProperty(t => t.UpdatedAtUtc, now), cancellationToken);
+        }
+        else
+        {
+            // Non-relational providers (in-memory tests) have no set-based update.
+            existing.Status = PaymentStatus.Processing;
+            existing.Amount = request.Amount;
+            existing.Currency = request.Currency;
+            existing.PaymentMethod = request.PaymentMethod;
+            existing.UpdatedAtUtc = now;
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            claimed = 1;
+        }
+
+        _dbContext.ChangeTracker.Clear();
+        var current = await _dbContext.Transactions.FirstAsync(t => t.Id == existing.Id, cancellationToken);
+        return claimed == 1 ? (current, null) : (null, current);
     }
+
+    internal static bool IsUniqueViolation(DbUpdateException ex) =>
+        ex.InnerException is Npgsql.PostgresException { SqlState: Npgsql.PostgresErrorCodes.UniqueViolation };
 
     public async Task<PaymentResponse?> GetPaymentByOrderIdAsync(
         Guid orderId,

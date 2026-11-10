@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using ShopSphere.Services.Ordering.Application.Events;
 using ShopSphere.Services.Payment.Data;
 using ShopSphere.Services.Payment.Entities;
+using ShopSphere.Services.Payment.Services;
 
 namespace ShopSphere.Services.Payment.Consumers;
 
@@ -46,7 +47,16 @@ public class OrderCreatedConsumer : IConsumer<OrderCreatedIntegrationEvent>
         };
 
         _dbContext.Transactions.Add(transaction);
-        await _dbContext.SaveChangesAsync(context.CancellationToken);
+        try
+        {
+            await _dbContext.SaveChangesAsync(context.CancellationToken);
+        }
+        catch (DbUpdateException ex) when (PaymentService.IsUniqueViolation(ex))
+        {
+            // A payment request created the row first: nothing left to register.
+            _logger.LogInformation("PaymentTransaction for OrderId {OrderId} was created concurrently; skipping.", message.OrderId);
+            return;
+        }
 
         _logger.LogInformation("Created initial Pending PaymentTransaction {TransactionId} for OrderId {OrderId}.",
             transaction.Id, message.OrderId);

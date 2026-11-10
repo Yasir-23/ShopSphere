@@ -24,6 +24,7 @@ public class OrderStateData : SagaStateMachineInstance
     }
 
     public string? FailureReason { get; set; }
+    public string? PaymentMethod { get; set; }
     public DateTime CreatedAtUtc { get; set; }
     public DateTime? UpdatedAtUtc { get; set; }
     public byte[]? RowVersion { get; set; }

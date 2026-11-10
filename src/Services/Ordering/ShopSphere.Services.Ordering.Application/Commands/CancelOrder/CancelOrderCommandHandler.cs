@@ -1,3 +1,4 @@
+using MassTransit;
 using MediatR;
 using Microsoft.Extensions.Logging;
 using ShopSphere.Services.Ordering.Application.DTOs;
@@ -10,13 +11,16 @@ namespace ShopSphere.Services.Ordering.Application.Commands.CancelOrder;
 public class CancelOrderCommandHandler : IRequestHandler<CancelOrderCommand, CancelOrderResult>
 {
     private readonly IOrderRepository _orderRepository;
+    private readonly IPublishEndpoint _publishEndpoint;
     private readonly ILogger<CancelOrderCommandHandler> _logger;
 
     public CancelOrderCommandHandler(
         IOrderRepository orderRepository,
+        IPublishEndpoint publishEndpoint,
         ILogger<CancelOrderCommandHandler> logger)
     {
         _orderRepository = orderRepository;
+        _publishEndpoint = publishEndpoint;
         _logger = logger;
     }
 
@@ -39,7 +43,7 @@ public class CancelOrderCommandHandler : IRequestHandler<CancelOrderCommand, Can
 
         try
         {
-            order.Cancel();
+            order.Cancel(request.IsAdmin ? "Cancelled by store administrator" : "Cancelled by customer");
         }
         catch (OrderingDomainException ex)
         {
@@ -51,6 +55,19 @@ public class CancelOrderCommandHandler : IRequestHandler<CancelOrderCommand, Can
         await _orderRepository.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation("Order {OrderId} was successfully cancelled.", order.Id);
+
+        // Let the checkout saga stop the in-flight workflow and release any reserved stock.
+        try
+        {
+            await _publishEndpoint.Publish(new ShopSphere.EventBus.Events.OrderCancelledIntegrationEvent(
+                order.Id,
+                order.CancellationReason ?? "Cancelled",
+                DateTime.UtcNow), cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to publish OrderCancelledIntegrationEvent for Order {OrderId}.", order.Id);
+        }
 
         var response = MapToOrderResponse(order);
         return CancelOrderResult.Success(response);
@@ -76,6 +93,7 @@ public class CancelOrderCommandHandler : IRequestHandler<CancelOrderCommand, Can
         order.TotalAmount,
         order.Status.ToString(),
         order.CreatedAtUtc,
-        order.UpdatedAtUtc);
+        order.UpdatedAtUtc,
+        order.CancellationReason);
 }
 

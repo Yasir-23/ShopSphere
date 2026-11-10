@@ -11,8 +11,11 @@ using ShopSphere.Services.Ordering.Infrastructure.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Explicitly bind Kestrel to Port 5040 for Ordering Service
-builder.WebHost.UseUrls("http://localhost:5040");
+// Default to port 5040 for local runs, but honour ASPNETCORE_URLS / --urls (containers bind :8080).
+if (string.IsNullOrWhiteSpace(builder.Configuration["urls"]) && string.IsNullOrWhiteSpace(builder.Configuration["ASPNETCORE_URLS"]))
+{
+    builder.WebHost.UseUrls("http://localhost:5040");
+}
 
 // 1. Serilog Structured Logging & OpenTelemetry Distributed Tracing
 builder.Services.AddShopSphereLogging(builder.Configuration, "ShopSphere.Services.Ordering");

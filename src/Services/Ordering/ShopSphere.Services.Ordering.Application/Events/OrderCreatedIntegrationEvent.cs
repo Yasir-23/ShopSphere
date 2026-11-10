@@ -13,6 +13,7 @@ public record OrderCreatedIntegrationEvent(
     string CustomerId,
     decimal TotalAmount,
     IReadOnlyList<OrderItemDto> Items,
-    DateTime CreatedAtUtc
+    DateTime CreatedAtUtc,
+    string? PaymentMethod = null
 );
 

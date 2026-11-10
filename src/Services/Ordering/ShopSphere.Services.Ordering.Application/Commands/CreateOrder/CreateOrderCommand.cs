@@ -14,6 +14,7 @@ public record CreateOrderCommand(
     string CustomerId,
     string CustomerEmail,
     AddressDto ShippingAddress,
-    List<CreateOrderItemDto> Items
+    List<CreateOrderItemDto> Items,
+    string? PaymentMethod = null
 ) : IRequest<OrderResponse>;
 

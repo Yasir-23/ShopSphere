@@ -18,7 +18,8 @@ public record OrderResponse(
     decimal TotalAmount,
     string Status,
     DateTime CreatedAtUtc,
-    DateTime? UpdatedAtUtc
+    DateTime? UpdatedAtUtc,
+    string? CancellationReason = null
 );
 
 public record OrderSummaryResponse(

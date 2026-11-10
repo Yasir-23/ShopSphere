@@ -20,6 +20,7 @@ public class OrderStateMap : SagaClassMap<OrderStateData>, IEntityTypeConfigurat
         entity.Property(x => x.CustomerId).HasMaxLength(100);
         entity.Property(x => x.TotalAmount).HasPrecision(18, 2);
         entity.Property(x => x.FailureReason).HasMaxLength(500);
+        entity.Property(x => x.PaymentMethod).HasMaxLength(64);
         entity.Property(x => x.ItemsJson);
 
         entity.Ignore(x => x.Items);

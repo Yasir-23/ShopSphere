@@ -34,6 +34,9 @@ public class CreateOrderCommandValidator : AbstractValidator<CreateOrderCommand>
                 .NotEmpty().WithMessage("Country is required.");
         });
 
+        RuleFor(c => c.PaymentMethod)
+            .MaximumLength(64).WithMessage("PaymentMethod must not exceed 64 characters.");
+
         RuleFor(c => c.Items)
             .NotEmpty().WithMessage("At least one item must be included in the order.");
 

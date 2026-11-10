@@ -61,7 +61,8 @@ public class CreateOrderCommandHandler : IRequestHandler<CreateOrderCommand, Ord
             order.CustomerId,
             order.TotalAmount,
             integrationEventItems,
-            order.CreatedAtUtc);
+            order.CreatedAtUtc,
+            string.IsNullOrWhiteSpace(request.PaymentMethod) ? null : request.PaymentMethod.Trim());
 
         try
         {
@@ -97,6 +98,7 @@ public class CreateOrderCommandHandler : IRequestHandler<CreateOrderCommand, Ord
         order.TotalAmount,
         order.Status.ToString(),
         order.CreatedAtUtc,
-        order.UpdatedAtUtc);
+        order.UpdatedAtUtc,
+        order.CancellationReason);
 }
 

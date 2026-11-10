@@ -14,8 +14,11 @@ using ShopSphere.Services.Payment.Validators;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Explicitly bind Kestrel to Port 5050 for Payment Service
-builder.WebHost.UseUrls("http://localhost:5050");
+// Default to port 5050 for local runs, but honour ASPNETCORE_URLS / --urls (containers bind :8080).
+if (string.IsNullOrWhiteSpace(builder.Configuration["urls"]) && string.IsNullOrWhiteSpace(builder.Configuration["ASPNETCORE_URLS"]))
+{
+    builder.WebHost.UseUrls("http://localhost:5050");
+}
 
 // 1. Serilog Structured Logging & OpenTelemetry Distributed Tracing
 builder.Services.AddShopSphereLogging(builder.Configuration, "ShopSphere.Services.Payment");
@@ -34,6 +37,7 @@ builder.Services.AddMassTransit(busConfigurator =>
 {
     busConfigurator.SetKebabCaseEndpointNameFormatter();
     busConfigurator.AddConsumer<OrderCreatedConsumer>();
+    busConfigurator.AddConsumer<ProcessPaymentConsumer>();
 
     busConfigurator.UsingRabbitMq((context, cfg) =>
     {

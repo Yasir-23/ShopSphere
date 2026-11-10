@@ -36,7 +36,11 @@ public record OrderCreatedIntegrationEvent(
     decimal TotalAmount,
     IReadOnlyList<OrderItemDto> Items,
     DateTime CreatedAtUtc
-) : IntegrationEvent, IOrderCreatedIntegrationEvent;
+) : IntegrationEvent, IOrderCreatedIntegrationEvent
+{
+    /// <summary>Payment method token chosen at checkout; carried through the saga to the Payment service.</summary>
+    public string? PaymentMethod { get; init; }
+}
 
 // OrderStartedEvent (Legacy / Alt naming compatibility)
 public interface IOrderStartedEvent
@@ -68,11 +72,10 @@ public record ReserveInventoryCommand(
     Guid OrderId,
     IReadOnlyList<OrderItemDto> Items,
     DateTimeOffset Timestamp
-) : IntegrationEvent, IReserveInventoryCommand
-{
-    public ReserveInventoryCommand(Guid orderId, IReadOnlyList<OrderItemDto> items)
-        : this(orderId, items, DateTimeOffset.UtcNow) { }
-}
+) : IntegrationEvent, IReserveInventoryCommand;
+// NOTE: message contracts must keep a single constructor (or a parameterless one):
+// System.Text.Json — MassTransit's serializer — cannot deserialize types with several
+// parameterized constructors, and the consumer faults before running.
 
 // InventoryReservedIntegrationEvent
 public interface IInventoryReservedIntegrationEvent
@@ -144,7 +147,11 @@ public record ProcessPaymentCommand(
     Guid CustomerId,
     decimal Amount,
     DateTimeOffset Timestamp
-) : IntegrationEvent, IProcessPaymentCommand;
+) : IntegrationEvent, IProcessPaymentCommand
+{
+    /// <summary>Payment method token chosen at checkout (e.g. card_visa_4242).</summary>
+    public string? PaymentMethod { get; init; }
+}
 
 // PaymentCompletedEvent
 public interface IPaymentCompletedEvent
@@ -241,3 +248,42 @@ public record ReleaseStockCommand(
     string Reason,
     DateTimeOffset Timestamp
 ) : IntegrationEvent, IReleaseStockCommand;
+
+
+// InventoryReleasedIntegrationEvent (compensation acknowledgement)
+public interface IInventoryReleasedIntegrationEvent
+{
+    Guid OrderId { get; }
+    DateTime ReleasedAtUtc { get; }
+}
+
+public record InventoryReleasedIntegrationEvent(
+    Guid OrderId,
+    DateTime ReleasedAtUtc
+) : IntegrationEvent, IInventoryReleasedIntegrationEvent;
+
+// CommitInventoryCommand (turns a reservation into a permanent stock deduction after payment)
+public interface ICommitInventoryCommand
+{
+    Guid OrderId { get; }
+    DateTimeOffset Timestamp { get; }
+}
+
+public record CommitInventoryCommand(
+    Guid OrderId,
+    DateTimeOffset Timestamp
+) : IntegrationEvent, ICommitInventoryCommand;
+
+// OrderCancelledIntegrationEvent (customer/admin cancellation of an in-flight order)
+public interface IOrderCancelledIntegrationEvent
+{
+    Guid OrderId { get; }
+    string Reason { get; }
+    DateTime CancelledAtUtc { get; }
+}
+
+public record OrderCancelledIntegrationEvent(
+    Guid OrderId,
+    string Reason,
+    DateTime CancelledAtUtc
+) : IntegrationEvent, IOrderCancelledIntegrationEvent;
